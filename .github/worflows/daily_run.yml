@@ -30,4 +30,4 @@ jobs:
           DB_HOST: ${{ secrets.DB_HOST }}
           RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
         run: |
-          python daily_task.py
+          python daily_colab_task/daily_task.py
