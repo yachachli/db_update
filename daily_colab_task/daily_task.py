@@ -9,32 +9,30 @@ from datetime import datetime, date
 
 # Database connection parameters using environment variables
 conn_params = {
-    "dbname": os.getenv("DB_NAME"),
-    "user": os.getenv("DB_USER"),
-    "password": os.getenv("DB_PASSWORD"),
-    "host": os.getenv("DB_HOST")
+    "dbname": os.getenv('DB_NAME'),
+    "user": os.getenv('DB_USER'),
+    "password": os.getenv('DB_PASSWORD'),
+    "host": os.getenv('DB_HOST')
 }
 
 # API headers using environment variable for API key
 headers = {
-    "x-rapidapi-key": os.getenv("RAPIDAPI_KEY"),
+    "x-rapidapi-key": os.getenv('RAPIDAPI_KEY'),
     "x-rapidapi-host": "tank01-fantasy-stats.p.rapidapi.com"
 }
-
 
 # Helper function for DB connection
 def get_db_connection():
     return psycopg2.connect(**conn_params)
 
-
-# Block 1: Fetch and update player stats
+# Block 1: Fetch and update player game stats
 def fetch_player_ids():
     with get_db_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT player_id FROM nba_players")
             return cur.fetchall()
 
-def fetch_player_stats(player_id, season_year):
+def fetch_player_game_stats(player_id, season_year):
     url = "https://tank01-fantasy-stats.p.rapidapi.com/getNBAGamesForPlayer"
     querystring = {"playerID": player_id, "statsToGet": season_year}
     response = requests.get(url, headers=headers, params=querystring)
@@ -56,7 +54,7 @@ def safe_int(value):
     except (ValueError, TypeError):
         return 0
 
-def update_player_stats(stats_dict, player_id):
+def update_player_game_stats(stats_dict, player_id):
     if stats_dict:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
@@ -168,7 +166,6 @@ def update_player_stats(stats_dict, player_id):
     else:
         print(f"No stats available for player ID {player_id}. Skipping stats update.")
 
-
 # Block 2: Fetch and update player injuries
 def fetch_injury_list():
     url = "https://tank01-fantasy-stats.p.rapidapi.com/getNBAInjuryList"
@@ -216,8 +213,7 @@ def update_player_injuries(injury_list):
     else:
         print("No injury data available")
 
-
-# Block 3: Fetch and update player information
+# Block 3: Fetch and update player information and season stats
 def fetch_player_first_names_with_full_names():
     with get_db_connection() as conn:
         with conn.cursor() as cur:
@@ -255,15 +251,78 @@ def update_player_info(player_data):
                 """, (player_data['nbaComHeadshot'], player_data['longName']))
             conn.commit()
 
+def update_player_season_stats(player_data):
+    stats = player_data.get('stats')
+    if stats:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                update_query = sql.SQL("""
+                    INSERT INTO nba_player_season_stats
+                    (player_id, season_id, games_played, points_per_game, rebounds_per_game,
+                    assists_per_game, steals_per_game, blocks_per_game, turnovers_per_game,
+                    field_goal_percentage, three_point_percentage, free_throw_percentage,
+                    minutes_per_game, offensive_rebounds_per_game, defensive_rebounds_per_game,
+                    field_goals_made_per_game, field_goals_attempted_per_game,
+                    three_pointers_made_per_game, three_pointers_attempted_per_game,
+                    free_throws_made_per_game, free_throws_attempted_per_game)
+                    VALUES (
+                        (SELECT id FROM nba_players WHERE name = %s),
+                        (SELECT id FROM nba_seasons WHERE season_year = '2023-2024'),
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    )
+                    ON CONFLICT (player_id, season_id) DO UPDATE
+                    SET games_played = EXCLUDED.games_played,
+                        points_per_game = EXCLUDED.points_per_game,
+                        rebounds_per_game = EXCLUDED.rebounds_per_game,
+                        assists_per_game = EXCLUDED.assists_per_game,
+                        steals_per_game = EXCLUDED.steals_per_game,
+                        blocks_per_game = EXCLUDED.blocks_per_game,
+                        turnovers_per_game = EXCLUDED.turnovers_per_game,
+                        field_goal_percentage = EXCLUDED.field_goal_percentage,
+                        three_point_percentage = EXCLUDED.three_point_percentage,
+                        free_throw_percentage = EXCLUDED.free_throw_percentage,
+                        minutes_per_game = EXCLUDED.minutes_per_game,
+                        offensive_rebounds_per_game = EXCLUDED.offensive_rebounds_per_game,
+                        defensive_rebounds_per_game = EXCLUDED.defensive_rebounds_per_game,
+                        field_goals_made_per_game = EXCLUDED.field_goals_made_per_game,
+                        field_goals_attempted_per_game = EXCLUDED.field_goals_attempted_per_game,
+                        three_pointers_made_per_game = EXCLUDED.three_pointers_made_per_game,
+                        three_pointers_attempted_per_game = EXCLUDED.three_pointers_attempted_per_game,
+                        free_throws_made_per_game = EXCLUDED.free_throws_made_per_game,
+                        free_throws_attempted_per_game = EXCLUDED.free_throws_attempted_per_game
+                """)
+                cur.execute(update_query, (
+                    player_data['longName'],
+                    stats.get('gamesPlayed', 0),
+                    stats.get('pts', 0.0),
+                    stats.get('reb', 0.0),
+                    stats.get('ast', 0.0),
+                    stats.get('stl', 0.0),
+                    stats.get('blk', 0.0),
+                    stats.get('TOV', 0.0),
+                    stats.get('fgp', 0.0),
+                    stats.get('tptfgp', 0.0),
+                    stats.get('ftp', 0.0),
+                    stats.get('mins', 0.0),
+                    stats.get('OffReb', 0.0),
+                    stats.get('DefReb', 0.0),
+                    stats.get('fgm', 0.0),
+                    stats.get('fga', 0.0),
+                    stats.get('tptfgm', 0.0),
+                    stats.get('tptfga', 0.0),
+                    stats.get('ftm', 0.0),
+                    stats.get('fta', 0.0)
+                ))
+            conn.commit()
+    else:
+        print(f"No stats available for {player_data['longName']}. Skipping stats update.")
 
 # Block 4: Fetch and update team stats
 def fetch_team_names():
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT name FROM nba_teams;")
-    team_names = [name[0] for name in cur.fetchall()]
-    cur.close()
-    conn.close()
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT name FROM nba_teams;")
+            team_names = [name[0] for name in cur.fetchall()]
     return team_names
 
 def fetch_team_data():
@@ -276,75 +335,83 @@ def fetch_team_data():
     return None
 
 def update_team_stats(team_name, team_data):
-    conn = get_db_connection()
-    cur = conn.cursor()
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            team_ppg = team_data.get('ppg', None)
+            team_oppg = team_data.get('oppg', None)
+            team_wins = team_data.get('wins', None)
+            team_losses = team_data.get('loss', None)
+            team_bpg = team_data.get('defensiveStats', {}).get('blk', {}).get('Total', None)
+            team_spg = team_data.get('defensiveStats', {}).get('stl', {}).get('Total', None)
+            team_apg = team_data.get('offensiveStats', {}).get('ast', {}).get('Total', None)
+            team_fga = team_data.get('offensiveStats', {}).get('fga', {}).get('Total', None)
+            team_fgm = team_data.get('offensiveStats', {}).get('fgm', {}).get('Total', None)
+            team_fta = team_data.get('offensiveStats', {}).get('fta', {}).get('Total', None)
+            team_tov = team_data.get('defensiveStats', {}).get('TOV', {}).get('Total', None)
 
-    team_ppg = team_data.get('ppg', None)
-    team_oppg = team_data.get('oppg', None)
-    team_wins = team_data.get('wins', None)
-    team_losses = team_data.get('loss', None)
-    team_bpg = team_data.get('defensiveStats', {}).get('blk', {}).get('Total', None)
-    team_spg = team_data.get('defensiveStats', {}).get('stl', {}).get('Total', None)
-    team_apg = team_data.get('offensiveStats', {}).get('ast', {}).get('Total', None)
-    team_fga = team_data.get('offensiveStats', {}).get('fga', {}).get('Total', None)
-    team_fgm = team_data.get('offensiveStats', {}).get('fgm', {}).get('Total', None)
-    team_fta = team_data.get('offensiveStats', {}).get('fta', {}).get('Total', None)
-    team_tov = team_data.get('defensiveStats', {}).get('TOV', {}).get('Total', None)
-
-    cur.execute("""
-        UPDATE nba_teams
-        SET ppg = %s, oppg = %s, wins = %s, loss = %s, team_bpg = %s, team_spg = %s, team_apg = %s,
-            team_fga = %s, team_fgm = %s, team_fta = %s, team_tov = %s
-        WHERE LOWER(name) = LOWER(%s);
-    """, (
-        team_ppg, team_oppg, team_wins, team_losses,
-        team_bpg, team_spg, team_apg, team_fga, team_fgm, team_fta, team_tov, team_name
-    ))
-
-    conn.commit()
-    cur.close()
-    conn.close()
-
+            cur.execute("""
+                UPDATE nba_teams
+                SET ppg = %s, oppg = %s, wins = %s, loss = %s, team_bpg = %s, team_spg = %s, team_apg = %s,
+                    team_fga = %s, team_fgm = %s, team_fta = %s, team_tov = %s
+                WHERE LOWER(name) = LOWER(%s);
+            """, (
+                team_ppg, team_oppg, team_wins, team_losses,
+                team_bpg, team_spg, team_apg, team_fga, team_fgm, team_fta, team_tov, team_name
+            ))
+            conn.commit()
 
 # Main function to run each block in sequence
 def main():
     try:
-        # Block 1
+        # Block 1: Fetch and update player game stats
+        print("Running Block 1: Fetch and update player game stats")
         player_ids = fetch_player_ids()
         season_year = 2024
         for (player_id,) in player_ids:
-            stats_dict = fetch_player_stats(player_id, season_year)
-            update_player_stats(stats_dict, player_id)
+            print(f"Fetching stats for Player ID: {player_id}")
+            stats_dict = fetch_player_game_stats(player_id, season_year)
+            update_player_game_stats(stats_dict, player_id)
             time.sleep(1)
-
     except Exception as e:
         print(f"Error in Block 1: {e}")
 
     try:
-        # Block 2
+        # Block 2: Fetch and update player injuries
+        print("Running Block 2: Fetch and update player injuries")
         injury_list = fetch_injury_list()
         if injury_list:
             update_player_injuries(injury_list)
+        else:
+            print("No injury data available")
     except Exception as e:
         print(f"Error in Block 2: {e}")
 
     try:
-        # Block 3
+        # Block 3: Fetch and update player info and season stats
+        print("Running Block 3: Fetch and update player info and season stats")
         first_names_with_full_names = fetch_player_first_names_with_full_names()
         grouped_names = group_full_names_by_first_name(first_names_with_full_names)
         for first_name, full_names in grouped_names.items():
+            print(f"Fetching info for players with first name: {first_name}")
             players_data = fetch_player_info(first_name)
             if players_data:
                 for player_data in players_data:
                     api_full_name = player_data['longName'].strip()
                     if api_full_name.lower() in [name.lower() for name in full_names]:
                         update_player_info(player_data)
-                        update_player_stats(player_data)
+                        update_player_season_stats(player_data)
+                        print(f"Processed {api_full_name}")
+                    else:
+                        print(f"Player {api_full_name} not found in database for first name {first_name}")
+            else:
+                print(f"Failed to fetch info for players with first name: {first_name}")
+            time.sleep(1)
     except Exception as e:
         print(f"Error in Block 3: {e}")
 
     try:
-        # Block 4
+        # Block 4: Fetch and update team stats
+        print("Running Block 4: Fetch and update team stats")
         team_names = fetch_team_names()
         teams_data = fetch_team_data()
         if teams_data:
@@ -352,9 +419,12 @@ def main():
                 team_data = next((team for team in teams_data if team['teamName'].lower() == team_name.lower()), None)
                 if team_data:
                     update_team_stats(team_name, team_data)
+                else:
+                    print(f"Skipping update for {team_name} (not found in API)")
+        else:
+            print("No team data available")
     except Exception as e:
         print(f"Error in Block 4: {e}")
-
 
 if __name__ == "__main__":
     main()
