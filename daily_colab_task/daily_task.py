@@ -256,6 +256,11 @@ def update_player_season_stats(player_data):
     if stats:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
+                
+                cur.execute("SELECT id FROM nba_seasons WHERE season_year = '2025'")
+                season_id_result = cur.fetchone()
+                season_id = season_id_result[0] if season_id_result else 2
+
                 update_query = sql.SQL("""
                     INSERT INTO nba_player_season_stats
                     (player_id, season_id, games_played, points_per_game, rebounds_per_game,
@@ -267,7 +272,6 @@ def update_player_season_stats(player_data):
                     free_throws_made_per_game, free_throws_attempted_per_game)
                     VALUES (
                         (SELECT id FROM nba_players WHERE name = %s),
-                        (SELECT id FROM nba_seasons WHERE season_year = '2023-2024'),
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                     )
                     ON CONFLICT (player_id, season_id) DO UPDATE
