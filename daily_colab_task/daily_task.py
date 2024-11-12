@@ -272,6 +272,7 @@ def update_player_season_stats(player_data):
                     free_throws_made_per_game, free_throws_attempted_per_game)
                     VALUES (
                         (SELECT id FROM nba_players WHERE name = %s),
+                        %s,
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                     )
                     ON CONFLICT (player_id, season_id) DO UPDATE
@@ -297,6 +298,7 @@ def update_player_season_stats(player_data):
                 """)
                 cur.execute(update_query, (
                     player_data['longName'],
+                    season_id,
                     stats.get('gamesPlayed', 0),
                     stats.get('pts', 0.0),
                     stats.get('reb', 0.0),
