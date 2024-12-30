@@ -490,6 +490,12 @@ def main():
                 logging.info(f"[3] updating {len(players_data)} players")
                 for player_data in players_data:
                     api_full_name = player_data["longName"].strip()
+                    # TODO: make ignore list better
+                    if (
+                        api_full_name == "Jaylin Williams"
+                        and player_data["team"] == "DEN"
+                    ):
+                        continue
                     if api_full_name.lower() in [name.lower() for name in full_names]:
                         update_player_info(player_data)
                         update_player_season_stats(player_data)
