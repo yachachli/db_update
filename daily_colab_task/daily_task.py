@@ -1,7 +1,6 @@
 import json
 import logging
 import os
-import time
 from collections import defaultdict
 from datetime import date, datetime
 from traceback import format_exception
@@ -9,6 +8,13 @@ from traceback import format_exception
 import psycopg2
 import requests
 from psycopg2 import sql
+
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    pass
 
 
 logging.basicConfig(
@@ -429,14 +435,14 @@ def main():
         player_ids = fetch_player_ids()
         logging.info(f"[1] got {len(player_ids)} player stats")
         season_year = 2024
-        for (player_id,) in player_ids:
-            logging.info(f"[1]   fetching {player_id=} {season_year=}")
-            stats_dict = fetch_player_game_stats(player_id, season_year)
-            logging.info("[1]   updating db")
+        with get_db_connection() as conn, conn.cursor() as cur:
+            for (player_id,) in player_ids:
+                logging.info(f"[1]   fetching {player_id=} {season_year=}")
+                stats_dict = fetch_player_game_stats(player_id, season_year)
+                logging.info("[1]   updating db")
 
-            with get_db_connection() as conn, conn.cursor() as cur:
                 update_player_game_stats(stats_dict, player_id, cur)
-                conn.commit()
+            conn.commit()
     except Exception as e:
         logging.error(f"[1] error: \n{format_exception(e)}")
 
@@ -470,19 +476,21 @@ def main():
                 )
                 continue
             logging.info(f"[3] updating {len(players_data)} players")
-            for player_data in players_data:
-                api_full_name = player_data["longName"].strip()
-                if api_full_name.lower() not in [name.lower() for name in full_names]:
-                    logging.info(
-                        f"[3]   Player {api_full_name} not found in database for first name {first_name}"
-                    )
-                    continue
+            with get_db_connection() as conn, conn.cursor() as cur:
+                for player_data in players_data:
+                    api_full_name = player_data["longName"].strip()
+                    if api_full_name.lower() not in [
+                        name.lower() for name in full_names
+                    ]:
+                        logging.info(
+                            f"[3]   Player {api_full_name} not found in database for first name {first_name}"
+                        )
+                        continue
 
-                with get_db_connection() as conn, conn.cursor() as cur:
                     update_player_info(player_data, cur)
                     update_player_season_stats(player_data, cur)
-                    conn.commit()
-                logging.info(f"[3]     Processed {api_full_name}")
+                    logging.info(f"[3]     Processed {api_full_name}")
+                conn.commit()
     except Exception as e:
         logging.error(f"[3] error:\n{format_exception(e)}")
 
