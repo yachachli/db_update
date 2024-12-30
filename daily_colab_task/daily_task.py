@@ -494,10 +494,9 @@ def main():
             team_names = fetch_team_names(cur)
             conn.commit()
         teams_data = fetch_team_data()
-
-        with get_db_connection() as conn, conn.cursor() as cur:
-            if teams_data:
-                logging.info(f"[4] got {len(teams_data)} teams")
+        if teams_data:
+            logging.info(f"[4] got {len(teams_data)} teams")
+            with get_db_connection() as conn, conn.cursor() as cur:
                 for team_name in team_names:
                     team_data = next(
                         (
@@ -511,9 +510,9 @@ def main():
                         update_team_stats(team_name, team_data, cur)
                     else:
                         print(f"Skipping update for {team_name} (not found in API)")
-            else:
-                logging.warning("[4] no team data available")
-            conn.commit()
+                conn.commit()
+        else:
+            logging.warning("[4] no team data available")
     except Exception as e:
         logging.error(f"[4] error:\n{format_exception(e)}")
 
