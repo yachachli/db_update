@@ -552,7 +552,7 @@ async def main():
     except Exception as e:
         # import pdb
 
-        logging.error("".join(traceback.format_exc()))
+        logging.error(traceback.format_exc())
         # pdb.set_trace()
 
 
