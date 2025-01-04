@@ -2,7 +2,7 @@ name: Daily Script Run
 
 on:
   schedule:
-    - cron: '5 0 * * *'  # Runs daily at 1 AM PST (9 AM UTC) 0 9 * * * is 1 am 
+    - cron: '0 9 * * *'  # Runs daily at 1 AM PST (9 AM UTC) 0 9 * * * is 1 am 
     # 4:05 pm pst is 
 
 jobs:
