@@ -4,6 +4,7 @@ import os
 import time
 from collections import defaultdict
 from datetime import date, datetime
+import traceback
 from traceback import format_exception
 
 import psycopg2
@@ -510,7 +511,7 @@ def main():
                 )
             time.sleep(0.05)
     except Exception as e:
-        logging.error(f"[3] error:\n{format_exception(e)}")
+        logging.error(f"[3] error:\n{traceback.format_exc()}")
 
     try:
         # Block 4: Fetch and update team stats
