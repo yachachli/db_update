@@ -5,6 +5,7 @@ import os
 from datetime import datetime, timedelta
 from os import environ
 from traceback import format_exception
+import traceback 
 
 import asyncpg
 import httpx
@@ -549,10 +550,10 @@ async def main():
         logging.info(f"  inserted {len(rows_game_stats)} game stats")
         await conn.close()
     except Exception as e:
-        import pdb
+        # import pdb
 
-        logging.error("".join(format_exception(e)))
-        pdb.set_trace()
+        logging.error(traceback.format_exc())
+        # pdb.set_trace()
 
 
 if __name__ == "__main__":
