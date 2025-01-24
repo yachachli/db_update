@@ -8,4 +8,10 @@ dependencies = [
     "asyncpg>=0.30.0",
     "httpx>=0.28.1",
     "polars>=1.20.0",
+    "python-dotenv>=1.0.1",
+]
+
+[dependency-groups]
+dev = [
+    "aiofiles>=24.1.0",
 ]

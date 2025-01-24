@@ -10,6 +10,13 @@ import asyncpg
 import httpx
 import polars as pl
 
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    pass
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s:%(levelname)s:%(filename)s:%(lineno)d:%(message)s",
@@ -156,7 +163,7 @@ async def main():
             ).alias("name"),
         )
         df_teams = df_teams.with_columns(
-            teamAbv=pl.when(pl.col("name") == "Washington Commanders")
+            teamAbv=pl.when(pl.col("teamAbv") == "WSH")
             .then(pl.lit("WAS"))
             .otherwise(pl.col("teamAbv"))
         )
@@ -249,6 +256,11 @@ async def main():
         logging.info(" creating dataframe")
         df_players = pl.DataFrame(data_players["body"])
         df_players = df_players.with_columns(pl.col("espnID").cast(pl.Int64))
+        df_players = df_players.with_columns(
+            team=pl.when(pl.col("team") == "WSH")
+            .then(pl.lit("WAS"))
+            .otherwise(pl.col("team"))
+        )
 
         df_team = pl.DataFrame([dict(r) for r in rows_teams])
         before_len = len(df_team)
@@ -264,6 +276,7 @@ async def main():
 
         logging.info("  inserting players")
         players = df_players.to_dicts()
+
         await conn.executemany(
             """
             INSERT INTO v3_nfl_players (
@@ -321,8 +334,8 @@ async def main():
                 date, teams = k.split("_")
                 away, home = teams.split("@")
                 v["date"] = datetime.strptime(date, "%Y%m%d")
-                v["home"] = home
-                v["away"] = away
+                v["home"] = home if home != "WSH" else "WAS"
+                v["away"] = away if away != "WSH" else "WAS"
                 Defense = v.get("Defense", {})
                 if Defense is not None:
                     v["tfl"] = try_float(Defense.get("tfl", 0.0))
