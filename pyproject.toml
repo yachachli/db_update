@@ -1,0 +1,11 @@
+[project]
+name = "db-update"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "asyncpg>=0.30.0",
+    "httpx>=0.28.1",
+    "polars>=1.20.0",
+]
