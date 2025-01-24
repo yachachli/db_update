@@ -4,6 +4,7 @@ import os
 import time
 from collections import defaultdict
 from datetime import date, datetime
+import traceback
 from traceback import format_exception
 
 import psycopg2
@@ -291,9 +292,9 @@ def update_player_info(player_data):
                     """
                     UPDATE nba_players
                     SET player_pic = %s
-                    WHERE name = %s
+                    WHERE player_id = %s
                 """,
-                    (player_data["nbaComHeadshot"], player_data["longName"]),
+                    (player_data["nbaComHeadshot"], player_data["playerID"]),
                 )
             conn.commit()
 
@@ -317,7 +318,7 @@ def update_player_season_stats(player_data):
                     three_pointers_made_per_game, three_pointers_attempted_per_game,
                     free_throws_made_per_game, free_throws_attempted_per_game)
                     VALUES (
-                        (SELECT id FROM nba_players WHERE name = %s),
+                        (SELECT id FROM nba_players WHERE player_id = %s),
                         %s,
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                     )
@@ -345,7 +346,7 @@ def update_player_season_stats(player_data):
                 cur.execute(
                     update_query,
                     (
-                        player_data["longName"],
+                        player_data["playerID"],
                         season_id,
                         stats.get("gamesPlayed", 0),
                         stats.get("pts", 0.0),
@@ -510,7 +511,7 @@ def main():
                 )
             time.sleep(0.05)
     except Exception as e:
-        logging.error(f"[3] error:\n{format_exception(e)}")
+        logging.error(f"[3] error:\n{traceback.format_exc()}")
 
     try:
         # Block 4: Fetch and update team stats
