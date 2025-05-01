@@ -32,4 +32,4 @@ jobs:
           DB_HOST:      ${{ secrets.DB_HOST }}
           RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
         run: |
-          python db_update/mlb-update.py
+          python mlb-update.py
