@@ -3,6 +3,7 @@ name: Daily MLB Database Update
 on:
   schedule:
     # Runs everyday at 10:30 AM UTC  (≈ 3:30 AM PST) – adjust as you like
+    # need to push this
     - cron:  '30 10 * * *'
   workflow_dispatch:
 
@@ -32,4 +33,4 @@ jobs:
           DB_HOST:      ${{ secrets.DB_HOST }}
           RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
         run: |
-          python mlb-update.py
+          python mlb-update.py 
