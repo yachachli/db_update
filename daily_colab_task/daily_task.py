@@ -291,10 +291,11 @@ def update_player_info(player_data):
                 cur.execute(
                     """
                     UPDATE nba_players
-                    SET player_pic = %s
+                    SET player_pic = %s,
+                        team_id = %s
                     WHERE player_id = %s
                 """,
-                    (player_data["nbaComHeadshot"], player_data["playerID"]),
+                    (player_data["nbaComHeadshot"], player_data.get("team_id", None), player_data["playerID"]),
                 )
             conn.commit()
 
