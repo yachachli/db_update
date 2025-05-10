@@ -295,7 +295,7 @@ def update_player_info(player_data):
                         team_id = %s
                     WHERE player_id = %s
                 """,
-                    (player_data["nbaComHeadshot"], player_data.get("team_id", None), player_data["playerID"]),
+                    (player_data["nbaComHeadshot"], player_data.get("teamID"), player_data["playerID"]),
                 )
             conn.commit()
 
