@@ -20,12 +20,17 @@ Environment variables expected
   RAPIDAPI_KEY    …
 """
 
-import json, logging, os, time, traceback
+import json
+import logging
+import os
+import time
+import traceback
 from datetime import datetime
 from typing import Any
 from os import environ
 
-import psycopg2, requests
+import psycopg2
+import requests
 
 # ────────────────────────────────────────────────────────────────────────────
 #  Logging
@@ -80,6 +85,16 @@ def safe_int(v):   # strings → int | None
         return int(v)
     except (TypeError, ValueError):
         return None
+    
+
+def clean_abv(raw: str | None) -> str | None: # for the abreviation skip I was getting
+    """Normalize teamAbv; blank → None."""
+    return (raw or "").strip().upper() or None
+
+def load_valid_abvs(cur) -> set[str]:
+    cur.execute("SELECT team_abv FROM mlb_teams")
+    return {row[0] for row in cur.fetchall()}
+
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -124,16 +139,15 @@ def insert_mlb_player(cur, p: dict):
     injury = p.get("injury", {})
     q = """
     INSERT INTO mlb_players (
-        player_id, long_name, team_abv, team_id, pos,
+        player_id, long_name, team_abv, pos,
         height, weight, bat, throw, b_day,
         mlb_headshot, espn_headshot, espn_status,
         injury_description, injury_return
     )
-    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
     ON CONFLICT (player_id) DO UPDATE SET
         long_name           = EXCLUDED.long_name,
         team_abv            = EXCLUDED.team_abv,
-        team_id             = EXCLUDED.team_id,
         pos                 = EXCLUDED.pos,
         height              = EXCLUDED.height,
         weight              = EXCLUDED.weight,
@@ -152,7 +166,7 @@ def insert_mlb_player(cur, p: dict):
             p["playerID"],
             p["longName"],
             p["teamAbv"],
-            p["teamID"],
+            # p["teamID"],
             p["pos"],
             p.get("height"),
             p.get("weight"),
@@ -260,6 +274,8 @@ def main():
             insert_mlb_team(cur, t)
         conn.commit()
 
+        valid_abvs = load_valid_abvs(cur)
+
         # ——— PLAYERS ———
         logging.info("Fetching players list …")
         players = get_json("/getMLBPlayerList")
@@ -273,10 +289,23 @@ def main():
                     "/getMLBPlayerInfo",
                     params={"playerID": pid, "getStats": "false", "statsSeason": SEASON},
                 )
+            except Exception as e:
+                logging.warning(f"player {pid}: {e}")
+                continue
+
+            # --- filter out free agents / bad codes ---
+            team_abv = clean_abv(info.get("teamAbv"))
+            if not team_abv or team_abv not in valid_abvs:
+                continue
+            info["teamAbv"] = team_abv
+
+            # --- insert player ---
+            try:
                 insert_mlb_player(cur, info)
                 player_info_cache.append(info)
             except Exception as e:
-                logging.warning(f"player {pid}: {e}")
+                logging.warning("insert %s: %s", pid, e)
+
             if i % BATCH == 0:
                 conn.commit()
                 logging.info(f" … committed {i} players so far")
