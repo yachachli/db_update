@@ -2,15 +2,14 @@ import json
 import logging
 import os
 import time
+import traceback
 from collections import defaultdict
 from datetime import date, datetime
-import traceback
 from traceback import format_exception
 
 import psycopg2
 import requests
 from psycopg2 import sql
-
 
 logging.basicConfig(
     level=logging.INFO,
@@ -295,7 +294,11 @@ def update_player_info(player_data):
                         team_id = %s
                     WHERE player_id = %s
                 """,
-                    (player_data["nbaComHeadshot"], player_data.get("teamID"), player_data["playerID"]),
+                    (
+                        player_data["nbaComHeadshot"],
+                        player_data.get("teamID"),
+                        player_data["playerID"],
+                    ),
                 )
             conn.commit()
 
@@ -511,7 +514,7 @@ def main():
                     f"[3] Failed to fetch info for players with first name: {first_name}"
                 )
             time.sleep(0.05)
-    except Exception as e:
+    except Exception:
         logging.error(f"[3] error:\n{traceback.format_exc()}")
 
     try:
