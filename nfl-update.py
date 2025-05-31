@@ -2,10 +2,9 @@ import asyncio
 import json
 import logging
 import os
+import traceback
 from datetime import datetime, timedelta
 from os import environ
-from traceback import format_exception
-import traceback 
 
 import asyncpg
 import httpx
@@ -26,7 +25,7 @@ logging.basicConfig(
 
 async def db_connect():
     return await asyncpg.connect(
-        f"postgresql://{environ["DB_USER"]}:{environ["DB_PASSWORD"]}@{environ["DB_HOST"]}/{environ["DB_NAME"]}",
+        f"postgresql://{environ['DB_USER']}:{environ['DB_PASSWORD']}@{environ['DB_HOST']}/{environ['DB_NAME']}",
     )
 
 
@@ -269,9 +268,18 @@ async def main():
             df_team, left_on="team", right_on="team_code", how="inner"
         )
         assert before_len == len(df_team)
+
+        no_injury = {
+            "injReturnDate": "",
+            "description": "",
+            "injDate": "",
+            "designation": "",
+        }
+
         df_players = df_players.with_columns(
             pl.col("injury").map_elements(
-                lambda x: json.dumps(x), return_dtype=pl.String
+                lambda x: json.dumps(x) if x != no_injury else None,
+                # return_dtype=pl.String,
             )
         )
 
@@ -562,11 +570,8 @@ async def main():
         await conn.executemany(insert_query, rows_game_stats)
         logging.info(f"  inserted {len(rows_game_stats)} game stats")
         await conn.close()
-    except Exception as e:
-        # import pdb
-
+    except Exception:
         logging.error(traceback.format_exc())
-        # pdb.set_trace()
 
 
 if __name__ == "__main__":

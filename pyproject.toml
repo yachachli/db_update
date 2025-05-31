@@ -1,5 +1,5 @@
 [project]
-name = "db-update"
+name = "db_update"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -14,4 +14,11 @@ dependencies = [
 [dependency-groups]
 dev = [
     "aiofiles>=24.1.0",
+    "asyncpg-stubs>=0.30.0",
+    "nox>=2025.5.1",
+    "pyright>=1.1.391",
+    "ruff>=0.8.4",
 ]
+lint = ["ruff>=0.11.9"]
+typecheck = ["pyright>=1.1.400"]
+format = ["ruff>=0.11.9"]

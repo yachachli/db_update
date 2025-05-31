@@ -8,7 +8,7 @@ Tables touched
   • mlb_player_game_stats         (PK:  player_id , game_id)
 
 All inserts are **idempotent**:
-    teams / players use ON CONFLICT … DO UPDATE  
+    teams / players use ON CONFLICT … DO UPDATE
     game-stats use ON CONFLICT … DO NOTHING
 
 Environment variables expected
@@ -20,14 +20,12 @@ Environment variables expected
   RAPIDAPI_KEY    …
 """
 
-import json
 import logging
 import os
 import time
 import traceback
-from datetime import datetime
-from typing import Any
 from os import environ
+from typing import Any
 
 import psycopg2
 import requests
@@ -46,20 +44,20 @@ logging.basicConfig(
 #  Config & helpers
 # ────────────────────────────────────────────────────────────────────────────
 API_HOST = "tank01-mlb-live-in-game-real-time-statistics.p.rapidapi.com"
-HEADERS  = {
+HEADERS = {
     "x-rapidapi-host": API_HOST,
-    "x-rapidapi-key":  environ["RAPIDAPI_KEY"],
+    "x-rapidapi-key": environ["RAPIDAPI_KEY"],
 }
 
 DB_CFG = dict(
-    dbname   = os.environ["DB_NAME"],
-    user     = os.environ["DB_USER"],
-    password = os.environ["DB_PASSWORD"],
-    host     = os.environ["DB_HOST"],
+    dbname=os.environ["DB_NAME"],
+    user=os.environ["DB_USER"],
+    password=os.environ["DB_PASSWORD"],
+    host=os.environ["DB_HOST"],
 )
 
-BATCH  = 50          # commit after N inserts
-SEASON = 2025        # ← adjust yearly
+BATCH = 50  # commit after N inserts
+SEASON = 2025  # ← adjust yearly
 
 
 # adding a comment for pushing sakes
@@ -80,7 +78,7 @@ def get_json(endpoint: str, params: dict[str, Any] | None = None) -> Any:
     return data["body"]
 
 
-def safe_int(v):   # strings → int | None
+def safe_int(v):  # strings → int | None
     try:
         return int(v)
     except (TypeError, ValueError):
@@ -264,7 +262,7 @@ def insert_mlb_game_stats(cur, pid: str, g: dict):
 def main():
     try:
         conn = get_db_connection()
-        cur  = conn.cursor()
+        cur = conn.cursor()
 
         # ——— TEAMS ———
         logging.info("Fetching teams …")
@@ -287,7 +285,11 @@ def main():
             try:
                 info = get_json(
                     "/getMLBPlayerInfo",
-                    params={"playerID": pid, "getStats": "false", "statsSeason": SEASON},
+                    params={
+                        "playerID": pid,
+                        "getStats": "false",
+                        "statsSeason": SEASON,
+                    },
                 )
             except Exception as e:
                 logging.warning(f"player {pid}: {e}")
@@ -309,7 +311,7 @@ def main():
             if i % BATCH == 0:
                 conn.commit()
                 logging.info(f" … committed {i} players so far")
-            time.sleep(0.4)   # be nice to RapidAPI rate-limit
+            time.sleep(0.4)  # be nice to RapidAPI rate-limit
 
         conn.commit()
         logging.info("Finished players")
