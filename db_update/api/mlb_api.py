@@ -1,8 +1,8 @@
 import datetime
 
-import httpx
 import msgspec
 
+from db_update.async_caching_client import AsyncCachingClient
 from db_update.env import Env
 
 
@@ -46,18 +46,18 @@ class MlbTeamsResponse(msgspec.Struct, frozen=True):
     body: list[MlbTeam]
 
 
-async def get_mlb_teams(client: httpx.AsyncClient) -> list[MlbTeam]:
-    url = f"https://{Env.RAPIDAPI_HOST}/getMLBTeams"
+async def get_mlb_teams(client: AsyncCachingClient) -> list[MlbTeam]:
+    url = f"https://{Env.MLB_API_HOST}/getMLBTeams"
 
-    res = await client.get(
+    data = await client.get(
         url,
+        cache_key="index",
+        ty=MlbTeamsResponse,
         headers={
-            "x-rapidapi-host": Env.RAPIDAPI_HOST,
-            "x-rapidapi-key": Env.RAPIDAPI_KEY,
+            "x-rapidapi-host": Env.MLB_API_HOST,
+            "x-rapidapi-key": Env.MLB_API_KEY,
         },
     )
-    res.raise_for_status()
-    data = msgspec.json.decode(res.content, type=MlbTeamsResponse)
     return data.body
 
 
@@ -83,18 +83,18 @@ class MlbPlayerResponses(msgspec.Struct, frozen=True):
     body: list[MlbPlayer]
 
 
-async def get_mlb_players(client: httpx.AsyncClient) -> list[MlbPlayer]:
-    url = f"https://{Env.RAPIDAPI_HOST}/getMLBPlayerList"
+async def get_mlb_players(client: AsyncCachingClient) -> list[MlbPlayer]:
+    url = f"https://{Env.MLB_API_HOST}/getMLBPlayerList"
 
-    res = await client.get(
+    data = await client.get(
         url,
+        cache_key="index",
+        ty=MlbPlayerResponses,
         headers={
-            "x-rapidapi-host": Env.RAPIDAPI_HOST,
-            "x-rapidapi-key": Env.RAPIDAPI_KEY,
+            "x-rapidapi-host": Env.MLB_API_HOST,
+            "x-rapidapi-key": Env.MLB_API_KEY,
         },
     )
-    res.raise_for_status()
-    data = msgspec.json.decode(res.content, type=MlbPlayerResponses)
     return data.body
 
 
@@ -161,15 +161,17 @@ class MlbPlayerDetailResponse(msgspec.Struct, frozen=True):
 
 
 async def get_mlb_player_info(
-    client: httpx.AsyncClient, player_id: str
+    client: AsyncCachingClient, player_id: str
 ) -> MlbPlayerDetail:
-    url = f"https://{Env.RAPIDAPI_HOST}/getMLBPlayerInfo"
+    url = f"https://{Env.MLB_API_HOST}/getMLBPlayerInfo"
 
-    res = await client.get(
+    data = await client.get(
         url,
+        cache_key=player_id,
+        ty=MlbPlayerDetailResponse,
         headers={
-            "x-rapidapi-host": Env.RAPIDAPI_HOST,
-            "x-rapidapi-key": Env.RAPIDAPI_KEY,
+            "x-rapidapi-host": Env.MLB_API_HOST,
+            "x-rapidapi-key": Env.MLB_API_KEY,
         },
         params={
             "playerID": player_id,
@@ -177,8 +179,6 @@ async def get_mlb_player_info(
             "statsSeason": datetime.datetime.now().year,
         },
     )
-    res.raise_for_status()
-    data = msgspec.json.decode(res.content, type=MlbPlayerDetailResponse)
     return data.body
 
 
@@ -261,20 +261,22 @@ class MlbPlayerGameForPlayerResponse(msgspec.Struct, frozen=True):
 
 
 async def get_mlb_games_for_player(
-    client: httpx.AsyncClient, player_id: str
+    client: AsyncCachingClient, player_id: str
 ) -> dict[str, MlbGameStats]:
-    url = f"https://{Env.RAPIDAPI_HOST}/getMLBGamesForPlayer"
+    url = f"https://{Env.MLB_API_HOST}/getMLBGamesForPlayer"
+    season = datetime.datetime.now().year
 
-    res = await client.get(
+    data = await client.get(
         url,
+        cache_key=f"{player_id}-{season}",
+        ty=MlbPlayerGameForPlayerResponse,
         headers={
-            "x-rapidapi-host": Env.RAPIDAPI_HOST,
-            "x-rapidapi-key": Env.RAPIDAPI_KEY,
+            "x-rapidapi-host": Env.MLB_API_HOST,
+            "x-rapidapi-key": Env.MLB_API_KEY,
         },
         params={
             "playerID": player_id,
-            "season": datetime.datetime.now().year,
+            "season": season,
         },
     )
-    data = msgspec.json.decode(res.content, type=MlbPlayerGameForPlayerResponse)
     return data.body

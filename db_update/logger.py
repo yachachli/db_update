@@ -12,7 +12,7 @@ def setup_logging():
         config = json.load(f)
 
     config["handlers"]["file"]["filename"] = (
-        f"./logs/app-{datetime.now().strftime('%Y-%m-%d')}.log"
+        f"./logs/app-{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.log"
     )
 
     os.makedirs("./logs", exist_ok=True)
