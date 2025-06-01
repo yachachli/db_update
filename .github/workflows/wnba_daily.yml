@@ -1,9 +1,10 @@
 name: Nightly WNBA Refresh
 
 on:
-  schedule:
-    # 1 AM PST daily (09:00 UTC)
-    - cron: '0 9 * * *'
+    schedule:
+        # 1 AM PST daily (09:00 UTC)
+        - cron: '0 9 * * *'
+    workflow_dispatch:
 
 jobs:
   refresh-wnba:
