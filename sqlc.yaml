@@ -1,0 +1,18 @@
+version: "2"
+plugins:
+  - name: python
+    wasm:
+      url: https://github.com/rayakame/sqlc-gen-better-python/releases/download/v0.4.4/sqlc-gen-better-python.wasm
+      sha256: b0d544244edd80dfd4c768c23c133ae7e3a00d03978e33efa5ddaa55ea2845e0
+sql:
+  - engine: "postgresql"
+    queries: "queries"
+    schema: "schema.sql"
+    codegen:
+      - out: "db_update/db"
+        plugin: python
+        options:
+          package: "db_update.db"
+          emit_init_file: true
+          sql_driver: "asyncpg"
+          model_type: "msgspec"
