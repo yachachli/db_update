@@ -1,4 +1,4 @@
-name: Daily Bets Analysis
+name: Daily Sports DB Update
 
 on:
   schedule:

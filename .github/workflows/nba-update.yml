@@ -1,4 +1,4 @@
-name: Daily Script Run
+name: Daily NBA DB Update
 
 on:
   schedule:
