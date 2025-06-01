@@ -2,8 +2,8 @@ name: Daily Script Run
 
 on:
   schedule:
-    - cron: '0 9 * * *'  # Runs daily at 1 AM PST (9 AM UTC) 0 9 * * * is 1 am 
-    # 4:05 pm pst is 
+    - cron: "0 9 * * *" # Runs daily at 1 AM PST (9 AM UTC) 0 9 * * * is 1 am
+    # 4:05 pm pst is
 
 jobs:
   run-daily-task:
@@ -16,7 +16,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v2
         with:
-          python-version: '3.8'
+          python-version: "3.8"
 
       - name: Install Dependencies
         run: |

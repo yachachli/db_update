@@ -83,16 +83,16 @@ def safe_int(v):  # strings → int | None
         return int(v)
     except (TypeError, ValueError):
         return None
-    
 
-def clean_abv(raw: str | None) -> str | None: # for the abreviation skip I was getting
+
+def clean_abv(raw: str | None) -> str | None:  # for the abreviation skip I was getting
     """Normalize teamAbv; blank → None."""
     return (raw or "").strip().upper() or None
+
 
 def load_valid_abvs(cur) -> set[str]:
     cur.execute("SELECT team_abv FROM mlb_teams")
     return {row[0] for row in cur.fetchall()}
-
 
 
 # ────────────────────────────────────────────────────────────────────────────
