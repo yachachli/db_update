@@ -22,6 +22,11 @@ __all__: collections.abc.Sequence[str] = (
     "V3NflGameStat",
     "V3NflPlayer",
     "V3NflTeam",
+    "WnbaPlayer",
+    "WnbaPlayerGameStat",
+    "WnbaPlayerSeasonStat",
+    "WnbaSeason",
+    "WnbaTeam",
 )
 
 import typing
@@ -338,3 +343,95 @@ class V3NflTeam(msgspec.Struct):
     passing_yards_allowed: int
     rushing_yards_allowed: int
     rushing_td_allowed: int | None
+
+
+class WnbaPlayer(msgspec.Struct):
+    id: int
+    name: str
+    position: str
+    team_id: int
+    player_pic: str | None
+    player_id: int
+    injury: str | None
+
+
+class WnbaPlayerGameStat(msgspec.Struct):
+    id: int
+    player_id: int
+    game_id: str
+    team_id: int
+    minutes_played: decimal.Decimal
+    points: int
+    rebounds: int
+    assists: int
+    steals: int
+    blocks: int
+    turnovers: int
+    offensive_rebounds: int
+    defensive_rebounds: int
+    free_throw_percentage: decimal.Decimal
+    plus_minus: decimal.Decimal
+    technical_fouls: int
+    field_goal_attempts: int
+    three_point_fg_percentage: decimal.Decimal
+    field_goals_made: int
+    field_goal_percentage: decimal.Decimal
+    three_point_fg_made: int
+    free_throw_attempts: int
+    three_point_fg_attempts: int
+    personal_fouls: int
+    free_throws_made: int
+    fantasy_points: decimal.Decimal
+    home_away: str
+    opponent: str
+    game_date: datetime.date
+    team_abv: str
+
+
+class WnbaPlayerSeasonStat(msgspec.Struct):
+    id: int
+    player_id: int
+    season_id: int
+    games_played: int
+    points_per_game: decimal.Decimal
+    rebounds_per_game: decimal.Decimal
+    assists_per_game: decimal.Decimal
+    steals_per_game: decimal.Decimal
+    blocks_per_game: decimal.Decimal
+    turnovers_per_game: decimal.Decimal
+    field_goal_percentage: decimal.Decimal
+    three_point_percentage: decimal.Decimal
+    free_throw_percentage: decimal.Decimal
+    minutes_per_game: decimal.Decimal
+    offensive_rebounds_per_game: decimal.Decimal
+    defensive_rebounds_per_game: decimal.Decimal
+    field_goals_made_per_game: decimal.Decimal
+    field_goals_attempted_per_game: decimal.Decimal
+    three_pointers_made_per_game: decimal.Decimal
+    three_pointers_attempted_per_game: decimal.Decimal
+    free_throws_made_per_game: decimal.Decimal
+    free_throws_attempted_per_game: decimal.Decimal
+
+
+class WnbaSeason(msgspec.Struct):
+    id: int
+    season_year: str
+
+
+class WnbaTeam(msgspec.Struct):
+    id: int
+    name: str
+    team_city: str
+    team_abv: str
+    conference: str
+    ppg: float
+    oppg: float
+    wins: int
+    loss: int
+    team_bpg: float
+    team_spg: float
+    team_apg: float
+    team_fga: float
+    team_fgm: float
+    team_fta: float
+    team_tov: float

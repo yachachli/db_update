@@ -14,5 +14,10 @@ class Env:
     DB_PASS = os.environ["DB_PASS"]
     DB_HOST = os.environ["DB_HOST"]
 
-    RAPIDAPI_KEY = os.environ["RAPIDAPI_KEY"]
-    RAPIDAPI_HOST = os.environ["RAPIDAPI_HOST"]
+    MLB_API_KEY = os.environ["MLB_API_KEY"]
+    MLB_API_HOST = os.environ["MLB_API_HOST"]
+
+    WNBA_API_KEY = os.environ["WNBA_API_KEY"]
+    WNBA_API_HOST = os.environ["WNBA_API_HOST"]
+
+    API_CACHE_DIR = os.environ.get("API_CACHE_DIR", None)

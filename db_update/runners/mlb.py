@@ -1,99 +1,32 @@
 import asyncio
+import functools
 import itertools
 import typing as t
 from datetime import datetime
 
-import httpx
-
-from db_update import api
+from db_update.api import mlb_api
+from db_update.async_caching_client import AsyncCachingClient
 from db_update.db import mlb_db as db
-from db_update.db_pool import DBConnection, DBPool
 from db_update.logger import logger
+from db_update.utils import (
+    batch,
+    batch_db,
+    bool_maybe,
+    float_maybe,
+    int_maybe,
+    int_safe,
+)
 
-
-def int_safe(v: str) -> int:
-    try:
-        return int(v)
-    except ValueError:
-        return 0
-
-
-def float_safe(v: str) -> float:
-    try:
-        return float(v)
-    except ValueError:
-        return 0
-
-
-def bool_maybe(v: str) -> bool | None:
-    if v == "True":
-        return True
-    elif v == "False":
-        return False
-    else:
-        return None
-
-
-def int_maybe(v: str) -> int | None:
-    try:
-        return int(v)
-    except ValueError:
-        return None
-
-
-def float_maybe(v: str) -> float | None:
-    try:
-        return float(v)
-    except ValueError:
-        return None
-
-
-async def batch[R](tasks: t.Iterable[t.Awaitable[R]], batch_size: int = 50) -> list[R]:
-    results: list[R] = []
-    tasks = list(tasks)
-    logger.info(f"batching {len(tasks)} tasks")
-    total = 0
-    for batch in itertools.batched(tasks, batch_size):
-        results.extend(await asyncio.gather(*batch))
-        total += len(batch)
-        logger.info(f"  {total} of {len(tasks)}")
-    return results
-
-
-async def batch_db[R](
-    pool: DBPool,
-    tasks: t.Iterable[t.Callable[[DBConnection], t.Awaitable[R]]],
-    batch_size: int = 50,
-) -> list[R]:
-    done = 0
-
-    async def wrapper(
-        pool: DBPool, tasks2: t.Iterable[t.Callable[[DBConnection], t.Awaitable[R]]]
-    ):
-        results: list[R] = []
-        processed = 0
-        async with pool.acquire() as conn:
-            for task in tasks2:
-                processed += 1
-                results.append(await task(conn))
-
-        nonlocal done
-        done += processed
-        logger.info(f"  {done}")
-        return results
-
-    ret = await asyncio.gather(
-        *[wrapper(pool, tasks2) for tasks2 in itertools.batched(tasks, batch_size)]
-    )
-    return list(itertools.chain.from_iterable(ret))
+if t.TYPE_CHECKING:
+    from db_update.db_pool import DBPool
 
 
 async def run(pool: DBPool):
     logger.info("Fetching MLB teams and players")
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with AsyncCachingClient(timeout=30) as client:
         teams, players = await asyncio.gather(
-            api.get_mlb_teams(client),
-            api.get_mlb_players(client),
+            mlb_api.get_mlb_teams(client),
+            mlb_api.get_mlb_players(client),
         )
     logger.info(f"Fetched {len(teams)} teams and {len(players)} players")
 
@@ -101,8 +34,8 @@ async def run(pool: DBPool):
     await batch_db(
         pool,
         (
-            lambda conn: db.mlb_teams_upsert(
-                conn,
+            functools.partial(
+                db.mlb_teams_upsert,
                 team_abv=team.teamAbv,
                 team_city=team.teamCity,
                 team_name=team.teamName,
@@ -119,9 +52,12 @@ async def run(pool: DBPool):
     )
 
     logger.info("Fetching MLB player info")
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with AsyncCachingClient(timeout=30) as client:
         players_details = await batch(
-            (api.get_mlb_player_info(client, player.playerID) for player in players),
+            (
+                mlb_api.get_mlb_player_info(client, player.playerID)
+                for player in players
+            ),
         )
     logger.info(f"Fetched {len(players_details)} player info")
 
@@ -129,8 +65,8 @@ async def run(pool: DBPool):
     await batch_db(
         pool,
         (
-            lambda conn: db.mlb_players_upsert(
-                conn,
+            functools.partial(
+                db.mlb_players_upsert,
                 player_id=int(player.player_id),
                 long_name=player.long_name,
                 team_abv=player.team_abv,
@@ -153,10 +89,10 @@ async def run(pool: DBPool):
     )
 
     logger.info("Fetching MLB game stats")
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with AsyncCachingClient(timeout=30) as client:
         games_stats_list = await batch(
             (
-                api.get_mlb_games_for_player(client, player.player_id)
+                mlb_api.get_mlb_games_for_player(client, player.player_id)
                 for player in players_details
             ),
         )
@@ -168,8 +104,8 @@ async def run(pool: DBPool):
         (
             itertools.chain.from_iterable(
                 (
-                    lambda conn: db.mlb_player_game_stats_upsert(
-                        conn,
+                    functools.partial(
+                        db.mlb_player_game_stats_upsert,
                         player_id=int(gs.player_id),
                         game_id=game_id,
                         team=gs.team,

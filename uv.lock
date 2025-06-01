@@ -105,6 +105,7 @@ name = "db-update"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "aiofiles" },
     { name = "asyncpg" },
     { name = "httpx" },
     { name = "msgspec" },
@@ -132,6 +133,7 @@ typecheck = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aiofiles", specifier = ">=24.1.0" },
     { name = "asyncpg", specifier = ">=0.30.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "msgspec", specifier = ">=0.19.0" },
