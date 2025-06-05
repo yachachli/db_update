@@ -21,13 +21,13 @@ from db_update.utils import (
 async def run(pool: DBPool):
     logger.info("Fetching MLB teams and players")
     async with AsyncCachingClient(timeout=30) as client:
-        teams, players = await asyncio.gather(
+        teams, players_raw = await asyncio.gather(
             mlb_api.get_mlb_teams(client),
             mlb_api.get_mlb_players(client),
         )
-    logger.info(f"Fetched {len(teams)} teams and {len(players)} players")
+    logger.info(f"Fetched {len(teams)} teams and {len(players_raw)} players")
 
-    logger.info("Upserting MLB teams")
+    logger.info("Upsertering MLB teams")
     await batch_db(
         pool,
         (
@@ -47,6 +47,16 @@ async def run(pool: DBPool):
             for team in teams
         ),
     )
+
+    players: list[mlb_api.MlbPlayer] = []
+    for player in players_raw:
+        if not player.team:
+            logger.warning(
+                f"skipping {player.longName} ({player.playerID}), player has no team"
+            )
+            continue
+
+        players.append(player)
 
     logger.info("Fetching MLB player info")
     async with AsyncCachingClient(timeout=30) as client:
@@ -96,6 +106,7 @@ async def run(pool: DBPool):
     logger.info(f"Fetched {len(games_stats_list)} game stats")
 
     logger.info(f"Upserting MLB {sum(len(gs) for gs in games_stats_list)} game stats")
+
     await batch_db(
         pool,
         (

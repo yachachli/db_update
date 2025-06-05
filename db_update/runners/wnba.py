@@ -82,7 +82,7 @@ async def run(pool: DBPool):
         [
             functools.partial(
                 db.wnba_player_season_stats_upsert,
-                player_id=print("inner", player.player_id) or int(player.player_id),
+                player_id=int(player.player_id),
                 season_id=season_id,
                 games_played=int_safe(player.stats.games_played),
                 points_per_game=decimal_safe(player.stats.pts),
