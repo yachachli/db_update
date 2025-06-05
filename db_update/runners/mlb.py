@@ -1,12 +1,12 @@
 import asyncio
 import functools
 import itertools
-import typing as t
 from datetime import datetime
 
 from db_update.api import mlb_api
 from db_update.async_caching_client import AsyncCachingClient
 from db_update.db import mlb_db as db
+from db_update.db_pool import DBPool
 from db_update.logger import logger
 from db_update.utils import (
     batch,
@@ -16,9 +16,6 @@ from db_update.utils import (
     int_maybe,
     int_safe,
 )
-
-if t.TYPE_CHECKING:
-    from db_update.db_pool import DBPool
 
 
 async def run(pool: DBPool):
