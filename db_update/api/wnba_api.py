@@ -241,7 +241,6 @@ class Stats(msgspec.Struct, frozen=True):
 
 class WnbaPlayerInfo(msgspec.Struct, frozen=True):
     exp: str
-    height: str
     injury: Injury
     pos: str
     school: str
@@ -258,6 +257,7 @@ class WnbaPlayerInfo(msgspec.Struct, frozen=True):
     player_id: str = msgspec.field(name="playerID")
     team_id: str = msgspec.field(name="teamID")
     age: str | None = None
+    height: str | None = None
     b_day: str | None = msgspec.field(name="bDay", default=None)
     last_game_played: str | None = msgspec.field(name="lastGamePlayed", default=None)
 
