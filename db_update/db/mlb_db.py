@@ -13,17 +13,20 @@ __all__: collections.abc.Sequence[str] = (
 import typing
 
 if typing.TYPE_CHECKING:
-    import asyncpg
     import collections.abc
     import datetime
-    import decimal
 
-    ConnectionLike: typing.TypeAlias = asyncpg.Connection[asyncpg.Record] | asyncpg.pool.PoolConnectionProxy[asyncpg.Record]
+    import asyncpg
 
-from db_update.db import models
+    ConnectionLike: typing.TypeAlias = (
+        asyncpg.Connection[asyncpg.Record]
+        | asyncpg.pool.PoolConnectionProxy[asyncpg.Record]
+    )
 
 
-MLB_PLAYER_GAME_STATS_UPSERT: typing.Final[str] = """-- name: MlbPlayerGameStatsUpsert :exec
+MLB_PLAYER_GAME_STATS_UPSERT: typing.Final[
+    str
+] = """-- name: MlbPlayerGameStatsUpsert :exec
 INSERT INTO mlb_player_game_stats (
     player_id,
     game_id,
@@ -170,13 +173,154 @@ ON CONFLICT (team_abv) DO UPDATE SET
 """
 
 
-async def mlb_player_game_stats_upsert(conn: ConnectionLike, *, player_id: int, game_id: str, team: str | None, started: bool | None, starting_position: str | None, all_positions_played: str | None, bb: int | None, ab: int | None, h: int | None, hr: int | None, rbi: int | None, so: int | None, avg: float | None, tb: int | None, doubles: int | None, triples: int | None, r: int | None, ibb: int | None, sf: int | None, sac: int | None, hbp: int | None, gidp: int | None, p_bb: int | None, p_h: int | None, p_hr: int | None, p_er: int | None, p_so: int | None, win: str | None, loss: str | None, save: str | None, era: float | None, innings_pitched: float | None, fielding_e: int | None, passed_ball: int | None, of_assists: int | None, pickoffs: int | None, sb: int | None, cs: int | None, po: int | None) -> None:
-    await conn.execute(MLB_PLAYER_GAME_STATS_UPSERT, player_id, game_id, team, started, starting_position, all_positions_played, bb, ab, h, hr, rbi, so, avg, tb, doubles, triples, r, ibb, sf, sac, hbp, gidp, p_bb, p_h, p_hr, p_er, p_so, win, loss, save, era, innings_pitched, fielding_e, passed_ball, of_assists, pickoffs, sb, cs, po)
+async def mlb_player_game_stats_upsert(
+    conn: ConnectionLike,
+    *,
+    player_id: int,
+    game_id: str,
+    team: str | None,
+    started: bool | None,
+    starting_position: str | None,
+    all_positions_played: str | None,
+    bb: int | None,
+    ab: int | None,
+    h: int | None,
+    hr: int | None,
+    rbi: int | None,
+    so: int | None,
+    avg: float | None,
+    tb: int | None,
+    doubles: int | None,
+    triples: int | None,
+    r: int | None,
+    ibb: int | None,
+    sf: int | None,
+    sac: int | None,
+    hbp: int | None,
+    gidp: int | None,
+    p_bb: int | None,
+    p_h: int | None,
+    p_hr: int | None,
+    p_er: int | None,
+    p_so: int | None,
+    win: str | None,
+    loss: str | None,
+    save: str | None,
+    era: float | None,
+    innings_pitched: float | None,
+    fielding_e: int | None,
+    passed_ball: int | None,
+    of_assists: int | None,
+    pickoffs: int | None,
+    sb: int | None,
+    cs: int | None,
+    po: int | None,
+) -> None:
+    await conn.execute(
+        MLB_PLAYER_GAME_STATS_UPSERT,
+        player_id,
+        game_id,
+        team,
+        started,
+        starting_position,
+        all_positions_played,
+        bb,
+        ab,
+        h,
+        hr,
+        rbi,
+        so,
+        avg,
+        tb,
+        doubles,
+        triples,
+        r,
+        ibb,
+        sf,
+        sac,
+        hbp,
+        gidp,
+        p_bb,
+        p_h,
+        p_hr,
+        p_er,
+        p_so,
+        win,
+        loss,
+        save,
+        era,
+        innings_pitched,
+        fielding_e,
+        passed_ball,
+        of_assists,
+        pickoffs,
+        sb,
+        cs,
+        po,
+    )
 
 
-async def mlb_players_upsert(conn: ConnectionLike, *, player_id: int, long_name: str, team_abv: str, pos: str, height: str, weight: int, bat: str | None, throw: str | None, b_day: datetime.date | None, mlb_headshot: str | None, espn_headshot: str | None, espn_status: str | None, injury_description: str | None, injury_return: str | None) -> None:
-    await conn.execute(MLB_PLAYERS_UPSERT, player_id, long_name, team_abv, pos, height, weight, bat, throw, b_day, mlb_headshot, espn_headshot, espn_status, injury_description, injury_return)
+async def mlb_players_upsert(
+    conn: ConnectionLike,
+    *,
+    player_id: int,
+    long_name: str,
+    team_abv: str,
+    pos: str,
+    height: str,
+    weight: int,
+    bat: str | None,
+    throw: str | None,
+    b_day: datetime.date | None,
+    mlb_headshot: str | None,
+    espn_headshot: str | None,
+    espn_status: str | None,
+    injury_description: str | None,
+    injury_return: str | None,
+) -> None:
+    await conn.execute(
+        MLB_PLAYERS_UPSERT,
+        player_id,
+        long_name,
+        team_abv,
+        pos,
+        height,
+        weight,
+        bat,
+        throw,
+        b_day,
+        mlb_headshot,
+        espn_headshot,
+        espn_status,
+        injury_description,
+        injury_return,
+    )
 
 
-async def mlb_teams_upsert(conn: ConnectionLike, *, team_abv: str, team_city: str | None, team_name: str, conference: str, division: str, rs: int, ra: int, wins: int, losses: int, run_diff: int) -> None:
-    await conn.execute(MLB_TEAMS_UPSERT, team_abv, team_city, team_name, conference, division, rs, ra, wins, losses, run_diff)
+async def mlb_teams_upsert(
+    conn: ConnectionLike,
+    *,
+    team_abv: str,
+    team_city: str | None,
+    team_name: str,
+    conference: str,
+    division: str,
+    rs: int,
+    ra: int,
+    wins: int,
+    losses: int,
+    run_diff: int,
+) -> None:
+    await conn.execute(
+        MLB_TEAMS_UPSERT,
+        team_abv,
+        team_city,
+        team_name,
+        conference,
+        division,
+        rs,
+        ra,
+        wins,
+        losses,
+        run_diff,
+    )

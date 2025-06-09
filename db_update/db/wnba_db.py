@@ -15,17 +15,21 @@ __all__: collections.abc.Sequence[str] = (
 import typing
 
 if typing.TYPE_CHECKING:
-    import asyncpg
     import collections.abc
     import datetime
     import decimal
 
-    ConnectionLike: typing.TypeAlias = asyncpg.Connection[asyncpg.Record] | asyncpg.pool.PoolConnectionProxy[asyncpg.Record]
+    import asyncpg
 
-from db_update.db import models
+    ConnectionLike: typing.TypeAlias = (
+        asyncpg.Connection[asyncpg.Record]
+        | asyncpg.pool.PoolConnectionProxy[asyncpg.Record]
+    )
 
 
-WNBA_PLAYER_GAME_STATS_UPSERT: typing.Final[str] = """-- name: WnbaPlayerGameStatsUpsert :exec
+WNBA_PLAYER_GAME_STATS_UPSERT: typing.Final[
+    str
+] = """-- name: WnbaPlayerGameStatsUpsert :exec
 INSERT INTO wnba_player_game_stats (
     player_id,
     game_id,
@@ -117,7 +121,9 @@ ON CONFLICT (player_id, game_id) DO UPDATE SET
     team_abv                  = EXCLUDED.team_abv
 """
 
-WNBA_PLAYER_SEASON_STATS_UPSERT: typing.Final[str] = """-- name: WnbaPlayerSeasonStatsUpsert :exec
+WNBA_PLAYER_SEASON_STATS_UPSERT: typing.Final[
+    str
+] = """-- name: WnbaPlayerSeasonStatsUpsert :exec
 INSERT INTO wnba_player_season_stats (
     player_id,
     season_id,
@@ -254,15 +260,127 @@ ON CONFLICT (team_abv) DO UPDATE SET
 """
 
 
-async def wnba_player_game_stats_upsert(conn: ConnectionLike, *, player_id: int, game_id: str, team_id: int, minutes_played: decimal.Decimal, points: int, rebounds: int, assists: int, steals: int, blocks: int, turnovers: int, offensive_rebounds: int, defensive_rebounds: int, free_throw_percentage: decimal.Decimal, plus_minus: decimal.Decimal, technical_fouls: int, field_goal_attempts: int, three_point_fg_percentage: decimal.Decimal, field_goals_made: int, field_goal_percentage: decimal.Decimal, three_point_fg_made: int, free_throw_attempts: int, three_point_fg_attempts: int, personal_fouls: int, free_throws_made: int, fantasy_points: decimal.Decimal, home_away: str, opponent: str, game_date: datetime.date, team_abv: str) -> None:
-    await conn.execute(WNBA_PLAYER_GAME_STATS_UPSERT, player_id, game_id, team_id, minutes_played, points, rebounds, assists, steals, blocks, turnovers, offensive_rebounds, defensive_rebounds, free_throw_percentage, plus_minus, technical_fouls, field_goal_attempts, three_point_fg_percentage, field_goals_made, field_goal_percentage, three_point_fg_made, free_throw_attempts, three_point_fg_attempts, personal_fouls, free_throws_made, fantasy_points, home_away, opponent, game_date, team_abv)
+async def wnba_player_game_stats_upsert(
+    conn: ConnectionLike,
+    *,
+    player_id: int,
+    game_id: str,
+    team_id: int,
+    minutes_played: decimal.Decimal,
+    points: int,
+    rebounds: int,
+    assists: int,
+    steals: int,
+    blocks: int,
+    turnovers: int,
+    offensive_rebounds: int,
+    defensive_rebounds: int,
+    free_throw_percentage: decimal.Decimal,
+    plus_minus: decimal.Decimal,
+    technical_fouls: int,
+    field_goal_attempts: int,
+    three_point_fg_percentage: decimal.Decimal,
+    field_goals_made: int,
+    field_goal_percentage: decimal.Decimal,
+    three_point_fg_made: int,
+    free_throw_attempts: int,
+    three_point_fg_attempts: int,
+    personal_fouls: int,
+    free_throws_made: int,
+    fantasy_points: decimal.Decimal,
+    home_away: str,
+    opponent: str,
+    game_date: datetime.date,
+    team_abv: str,
+) -> None:
+    await conn.execute(
+        WNBA_PLAYER_GAME_STATS_UPSERT,
+        player_id,
+        game_id,
+        team_id,
+        minutes_played,
+        points,
+        rebounds,
+        assists,
+        steals,
+        blocks,
+        turnovers,
+        offensive_rebounds,
+        defensive_rebounds,
+        free_throw_percentage,
+        plus_minus,
+        technical_fouls,
+        field_goal_attempts,
+        three_point_fg_percentage,
+        field_goals_made,
+        field_goal_percentage,
+        three_point_fg_made,
+        free_throw_attempts,
+        three_point_fg_attempts,
+        personal_fouls,
+        free_throws_made,
+        fantasy_points,
+        home_away,
+        opponent,
+        game_date,
+        team_abv,
+    )
 
 
-async def wnba_player_season_stats_upsert(conn: ConnectionLike, *, player_id: int, season_id: int, games_played: int, points_per_game: decimal.Decimal, rebounds_per_game: decimal.Decimal, assists_per_game: decimal.Decimal, steals_per_game: decimal.Decimal, blocks_per_game: decimal.Decimal, turnovers_per_game: decimal.Decimal, field_goal_percentage: decimal.Decimal, three_point_percentage: decimal.Decimal, free_throw_percentage: decimal.Decimal, minutes_per_game: decimal.Decimal, offensive_rebounds_per_game: decimal.Decimal, defensive_rebounds_per_game: decimal.Decimal, field_goals_made_per_game: decimal.Decimal, field_goals_attempted_per_game: decimal.Decimal, three_pointers_made_per_game: decimal.Decimal, three_pointers_attempted_per_game: decimal.Decimal, free_throws_made_per_game: decimal.Decimal, free_throws_attempted_per_game: decimal.Decimal) -> None:
-    await conn.execute(WNBA_PLAYER_SEASON_STATS_UPSERT, player_id, season_id, games_played, points_per_game, rebounds_per_game, assists_per_game, steals_per_game, blocks_per_game, turnovers_per_game, field_goal_percentage, three_point_percentage, free_throw_percentage, minutes_per_game, offensive_rebounds_per_game, defensive_rebounds_per_game, field_goals_made_per_game, field_goals_attempted_per_game, three_pointers_made_per_game, three_pointers_attempted_per_game, free_throws_made_per_game, free_throws_attempted_per_game)
+async def wnba_player_season_stats_upsert(
+    conn: ConnectionLike,
+    *,
+    player_id: int,
+    season_id: int,
+    games_played: int,
+    points_per_game: decimal.Decimal,
+    rebounds_per_game: decimal.Decimal,
+    assists_per_game: decimal.Decimal,
+    steals_per_game: decimal.Decimal,
+    blocks_per_game: decimal.Decimal,
+    turnovers_per_game: decimal.Decimal,
+    field_goal_percentage: decimal.Decimal,
+    three_point_percentage: decimal.Decimal,
+    free_throw_percentage: decimal.Decimal,
+    minutes_per_game: decimal.Decimal,
+    offensive_rebounds_per_game: decimal.Decimal,
+    defensive_rebounds_per_game: decimal.Decimal,
+    field_goals_made_per_game: decimal.Decimal,
+    field_goals_attempted_per_game: decimal.Decimal,
+    three_pointers_made_per_game: decimal.Decimal,
+    three_pointers_attempted_per_game: decimal.Decimal,
+    free_throws_made_per_game: decimal.Decimal,
+    free_throws_attempted_per_game: decimal.Decimal,
+) -> None:
+    await conn.execute(
+        WNBA_PLAYER_SEASON_STATS_UPSERT,
+        player_id,
+        season_id,
+        games_played,
+        points_per_game,
+        rebounds_per_game,
+        assists_per_game,
+        steals_per_game,
+        blocks_per_game,
+        turnovers_per_game,
+        field_goal_percentage,
+        three_point_percentage,
+        free_throw_percentage,
+        minutes_per_game,
+        offensive_rebounds_per_game,
+        defensive_rebounds_per_game,
+        field_goals_made_per_game,
+        field_goals_attempted_per_game,
+        three_pointers_made_per_game,
+        three_pointers_attempted_per_game,
+        free_throws_made_per_game,
+        free_throws_attempted_per_game,
+    )
 
 
-async def wnba_player_upsert(conn: ConnectionLike, *, name: str, position: str, team_id: int, player_id: int) -> None:
+async def wnba_player_upsert(
+    conn: ConnectionLike, *, name: str, position: str, team_id: int, player_id: int
+) -> None:
     await conn.execute(WNBA_PLAYER_UPSERT, name, position, team_id, player_id)
 
 
@@ -273,5 +391,40 @@ async def wnba_season_id(conn: ConnectionLike, *, season_year: str) -> int | Non
     return row[0]
 
 
-async def wnba_team_upsert(conn: ConnectionLike, *, name: str, team_city: str, team_abv: str, conference: str, ppg: float, oppg: float, wins: int, loss: int, team_bpg: float, team_spg: float, team_apg: float, team_fga: float, team_fgm: float, team_fta: float, team_tov: float) -> None:
-    await conn.execute(WNBA_TEAM_UPSERT, name, team_city, team_abv, conference, ppg, oppg, wins, loss, team_bpg, team_spg, team_apg, team_fga, team_fgm, team_fta, team_tov)
+async def wnba_team_upsert(
+    conn: ConnectionLike,
+    *,
+    name: str,
+    team_city: str,
+    team_abv: str,
+    conference: str,
+    ppg: float,
+    oppg: float,
+    wins: int,
+    loss: int,
+    team_bpg: float,
+    team_spg: float,
+    team_apg: float,
+    team_fga: float,
+    team_fgm: float,
+    team_fta: float,
+    team_tov: float,
+) -> None:
+    await conn.execute(
+        WNBA_TEAM_UPSERT,
+        name,
+        team_city,
+        team_abv,
+        conference,
+        ppg,
+        oppg,
+        wins,
+        loss,
+        team_bpg,
+        team_spg,
+        team_apg,
+        team_fga,
+        team_fgm,
+        team_fta,
+        team_tov,
+    )
