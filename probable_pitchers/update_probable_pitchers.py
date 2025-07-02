@@ -129,10 +129,18 @@ def calculate_pitcher_grades(df: pd.DataFrame) -> pd.DataFrame:
 
 # 3) UPSERT
 def upsert_to_db(df: pd.DataFrame):
-    db_url = os.getenv("DB_URL")
-    if not db_url:
-        raise RuntimeError("DB_URL env var is required")
-    conn = psycopg2.connect(db_url)
+    # match your daily_task pattern:
+    conn_params = {
+        "dbname":   os.getenv("DB_NAME"),
+        "user":     os.getenv("DB_USER"),
+        "password": os.getenv("DB_PASSWORD"),
+        "host":     os.getenv("DB_HOST"),
+    }
+    # sanity check
+    if not all(conn_params.values()):
+        raise RuntimeError("DB_NAME/DB_USER/DB_PASSWORD/DB_HOST must all be set")
+
+    conn = psycopg2.connect(**conn_params)
     conn.autocommit = True
     cur = conn.cursor()
 
@@ -167,12 +175,13 @@ def upsert_to_db(df: pd.DataFrame):
             (row["name"],),
         )
         pid, team = cur.fetchone() or (None, None)
-        pa = None if pd.isna(row.get("career_vs_opp_pa")) else int(row["career_vs_opp_pa"])
+
+        pa = None
+        if not pd.isna(row.get("career_vs_opp_pa")):
+            pa = int(row["career_vs_opp_pa"])
+
         vals = (
-            row["date_scraped"],
-            pid,
-            row["name"],
-            team,
+            row["date_scraped"], pid, row["name"], team,
             pa,
             row.get("career_vs_opp_kpct"),
             row.get("career_vs_opp_bbpct"),
