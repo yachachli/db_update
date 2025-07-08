@@ -35,6 +35,9 @@ jobs:
           DB_PASS: ${{ secrets.DB_PASS }}
           DB_HOST: ${{ secrets.DB_HOST }}
 
+          MLB_API_KEY:    ${{ secrets.MLB_API_KEY }}    
+          MLB_API_HOST:   ${{ secrets.MLB_API_HOST }} 
+
           WNBA_API_KEY: ${{ secrets.WNBA_API_KEY }}
           WNBA_API_HOST: ${{ secrets.WNBA_API_HOST }}
         run: uv run -m db_update wnba
