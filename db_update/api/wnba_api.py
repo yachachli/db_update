@@ -250,13 +250,13 @@ class WnbaPlayerInfo(msgspec.Struct, frozen=True):
     espn_id: str = msgspec.field(name="espnID")
     espn_link: str = msgspec.field(name="espnLink")
     espn_name: str = msgspec.field(name="espnName")
-    jersey_num: str = msgspec.field(name="jerseyNum")
+    jersey_num: str | None = msgspec.field(name="jerseyNum", default=None)
     long_name: str = msgspec.field(name="longName")
     player_id: str = msgspec.field(name="playerID")
     team_id: str = msgspec.field(name="teamID")
-    age: str | None = None
-    height: str | None = None
-    weight: str | None = None
+    age: str | None = msgspec.field(name="age", default=None)
+    height: str | None = msgspec.field(name="height", default=None)
+    weight: str | None = msgspec.field(name="weight", default=None)
     espn_id_full: str | None = msgspec.field(name="espnIDFull", default=None)
     b_day: str | None = msgspec.field(name="bDay", default=None)
     last_game_played: str | None = msgspec.field(name="lastGamePlayed", default=None)
