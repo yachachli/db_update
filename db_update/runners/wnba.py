@@ -88,7 +88,7 @@ async def run(pool: DBPool):
                 team_id=int_safe(player.team_id),
                 player_id=int_safe(player.player_id),
             )
-            for player in valid_players
+            for player in unique_players
         ),
     )
 
