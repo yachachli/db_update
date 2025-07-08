@@ -1,0 +1,40 @@
+# .github/workflows/wnba-update.yml
+name: WNBA DB Update
+
+on:
+  schedule:
+    # Runs every day at 2 AM Pacific Standard Time (UTC-8 → 10:00 UTC)
+    - cron: "0 10 * * *"
+  workflow_dispatch:
+
+jobs:
+  update-wnba:
+    name: Update WNBA Database
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: ".python-version"
+
+      - name: Install dependencies
+        run: uv sync --locked --all-extras --dev
+
+      - name: Run WNBA update
+        env:
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASS: ${{ secrets.DB_PASS }}
+          DB_HOST: ${{ secrets.DB_HOST }}
+
+          WNBA_API_KEY: ${{ secrets.WNBA_API_KEY }}
+          WNBA_API_HOST: ${{ secrets.WNBA_API_HOST }}
+        run: uv run -m db_update wnba

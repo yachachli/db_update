@@ -69,8 +69,8 @@ async def run(pool: DBPool):
                 db.wnba_player_upsert,
                 name=player.long_name,
                 position=player.pos,
-                team_id=int(player.team_id),
-                player_id=int(player.player_id),
+                team_id=int_safe(player.team_id),
+                player_id=int_safe(player.player_id),
             )
             for player in players_details
         ),
