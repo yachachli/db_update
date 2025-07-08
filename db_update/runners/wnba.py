@@ -120,7 +120,7 @@ async def run(pool: DBPool):
                 free_throws_made_per_game=decimal_safe(player.stats.ftm),
                 free_throws_attempted_per_game=decimal_safe(player.stats.fta),
             )
-            for player in players_details
+            for player in unique_players
         ],
     )
 
