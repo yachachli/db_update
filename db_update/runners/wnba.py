@@ -13,7 +13,7 @@ from db_update.utils import batch, batch_db, decimal_safe, float_safe, int_safe
 
 async def run(pool: DBPool):
     logger.info("Fetching WNBA teams and players")
-    async with AsyncCachingClient(timeout=30) as client, pool.acquire() as conn:
+    async with AsyncCachingClient(timeout=60) as client, pool.acquire() as conn:
         teams, players, season_id_maybe = await asyncio.gather(
             wnba_api.get_wnba_teams(client),
             wnba_api.get_wnba_players(client),
@@ -52,12 +52,12 @@ async def run(pool: DBPool):
     )
 
     logger.info("Fetching WNBA player info")
-    async with AsyncCachingClient(timeout=30) as client:
+    async with AsyncCachingClient(timeout=60) as client:
         players_details = await batch(
             (
                 wnba_api.get_wnba_player_info(client, player.player_id)
                 for player in players
-            ),
+            ), batch_size=50
         )
 
     logger.info(f"Fetched {len(players_details)} player info")
@@ -125,7 +125,7 @@ async def run(pool: DBPool):
     )
 
     logger.info("Fetching WNBA game stats")
-    async with AsyncCachingClient(timeout=30) as client:
+    async with AsyncCachingClient(timeout=60) as client:
         games_stats_list = await batch(
             (
                 wnba_api.get_wnba_games_for_player(client, player.player_id)
