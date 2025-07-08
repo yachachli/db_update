@@ -67,6 +67,17 @@ async def run(pool: DBPool):
         if (_tid := int_safe(p.team_id)) != 0
     ]
     logger.info(f"Upserting {len(valid_players)} valid players")
+
+    seen: set[tuple[str,int]] = set()
+    unique_players: list[type(players_details[0])] = [] # type: ignore
+    for p in valid_players:
+        key = (p.long_name, int_safe(p.team_id))
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_players.append(p)
+    logger.info(f"After de-dup: {len(unique_players)} unique players")
+
     await batch_db(
         pool,
         (
