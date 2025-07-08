@@ -239,7 +239,7 @@ class Stats(msgspec.Struct, frozen=True):
     )
 
 
-class WnbaPlayerInfo(msgspec.Struct, frozen=True):
+class WnbaPlayerInfo(msgspec.Struct, frozen=True, kw_only=True):
     exp: str
     injury: Injury
     pos: str
