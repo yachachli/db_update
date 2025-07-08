@@ -62,6 +62,11 @@ async def run(pool: DBPool):
 
     logger.info(f"Fetched {len(players_details)} player info")
     logger.info(f"Upserting WNBA {len(players_details)} players")
+    valid_players = [
+        p for p in players_details
+        if (_tid := int_safe(p.team_id)) != 0
+    ]
+    logger.info(f"Upserting {len(valid_players)} valid players")
     await batch_db(
         pool,
         (
@@ -72,7 +77,7 @@ async def run(pool: DBPool):
                 team_id=int_safe(player.team_id),
                 player_id=int_safe(player.player_id),
             )
-            for player in players_details
+            for player in valid_players
         ),
     )
 
