@@ -13,7 +13,7 @@ from db_update.utils import batch, batch_db, decimal_safe, float_safe, int_safe
 
 async def run(pool: DBPool):
     logger.info("Fetching WNBA teams and players")
-    async with AsyncCachingClient(timeout=30) as client, pool.acquire() as conn:
+    async with AsyncCachingClient(timeout=60) as client, pool.acquire() as conn:
         teams, players, season_id_maybe = await asyncio.gather(
             wnba_api.get_wnba_teams(client),
             wnba_api.get_wnba_players(client),
@@ -52,16 +52,32 @@ async def run(pool: DBPool):
     )
 
     logger.info("Fetching WNBA player info")
-    async with AsyncCachingClient(timeout=30) as client:
+    async with AsyncCachingClient(timeout=60) as client:
         players_details = await batch(
             (
                 wnba_api.get_wnba_player_info(client, player.player_id)
                 for player in players
-            ),
+            ), batch_size=50
         )
 
     logger.info(f"Fetched {len(players_details)} player info")
     logger.info(f"Upserting WNBA {len(players_details)} players")
+    valid_players = [
+        p for p in players_details
+        if (_tid := int_safe(p.team_id)) != 0
+    ]
+    logger.info(f"Upserting {len(valid_players)} valid players")
+
+    seen: set[tuple[str,int]] = set()
+    unique_players: list[type(players_details[0])] = [] # type: ignore
+    for p in valid_players:
+        key = (p.long_name, int_safe(p.team_id))
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_players.append(p)
+    logger.info(f"After de-dup: {len(unique_players)} unique players")
+
     await batch_db(
         pool,
         (
@@ -72,7 +88,7 @@ async def run(pool: DBPool):
                 team_id=int_safe(player.team_id),
                 player_id=int_safe(player.player_id),
             )
-            for player in players_details
+            for player in unique_players
         ),
     )
 
@@ -104,12 +120,12 @@ async def run(pool: DBPool):
                 free_throws_made_per_game=decimal_safe(player.stats.ftm),
                 free_throws_attempted_per_game=decimal_safe(player.stats.fta),
             )
-            for player in players_details
+            for player in unique_players
         ],
     )
 
     logger.info("Fetching WNBA game stats")
-    async with AsyncCachingClient(timeout=30) as client:
+    async with AsyncCachingClient(timeout=60) as client:
         games_stats_list = await batch(
             (
                 wnba_api.get_wnba_games_for_player(client, player.player_id)
