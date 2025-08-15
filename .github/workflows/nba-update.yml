@@ -1,9 +1,11 @@
 name: Daily NBA DB Update
 
 on:
-  schedule:
-    - cron: "0 9 * * *" # Runs daily at 1 AM PST (9 AM UTC) 0 9 * * * is 1 am
-    # 4:05 pm pst is
+  # schedule:
+  #   # I want to turn this cron job off for the next 2 months
+  #   - cron: "0 9 * * *" # Runs daily at 1 AM PST (9 AM UTC) 0 9 * * * is 1 am
+  #   # 4:05 pm pst is
+  workflow_dispatch:
 
 jobs:
   run-daily-task:
