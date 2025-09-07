@@ -3,7 +3,7 @@ name: Daily MLB DB Update
 on:
   schedule:
     # 1 AM Pacific / 13 UTC
-    - cron: "0 9 * * *"
+    - cron: "0 10 * * *"
   workflow_dispatch:
 
 jobs:
