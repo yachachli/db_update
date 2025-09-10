@@ -144,7 +144,7 @@ async def main():
                     "schedules": "false",
                     "topPerformers": "false",
                     "teamStats": "true",
-                    "teamStatsSeason": 2024,
+                    "teamStatsSeason": datetime.now().year,
                 },
             )
             logging.info(f"  got {len(data_teams['body'])} teams")
@@ -279,7 +279,7 @@ async def main():
         df_players = df_players.with_columns(
             pl.col("injury").map_elements(
                 lambda x: json.dumps(x) if x != no_injury else None,
-                # return_dtype=pl.String,
+                return_dtype=pl.String,
             )
         )
 
@@ -338,11 +338,15 @@ async def main():
 
         logging.info("  creating dataframe")
         games = []
+        cutoff_date = datetime(2025, 9, 3)
         for data in data_player_stats:
             for k, v in data.items():
                 date, teams = k.split("_")
                 away, home = teams.split("@")
                 v["date"] = datetime.strptime(date, "%Y%m%d")
+                # Skip preseason or earlier games
+                if v["date"] <= cutoff_date:
+                    continue
                 v["home"] = home if home != "WSH" else "WAS"
                 v["away"] = away if away != "WSH" else "WAS"
                 Defense = v.get("Defense", {})
