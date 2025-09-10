@@ -144,7 +144,7 @@ async def main():
                     "schedules": "false",
                     "topPerformers": "false",
                     "teamStats": "true",
-                    "teamStatsSeason": 2024,
+                    "teamStatsSeason": datetime.now().year,
                 },
             )
             logging.info(f"  got {len(data_teams['body'])} teams")
@@ -279,7 +279,7 @@ async def main():
         df_players = df_players.with_columns(
             pl.col("injury").map_elements(
                 lambda x: json.dumps(x) if x != no_injury else None,
-                # return_dtype=pl.String,
+                return_dtype=pl.String,
             )
         )
 
