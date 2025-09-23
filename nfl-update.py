@@ -567,7 +567,47 @@ async def main():
             kick_points
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42)
-        ON CONFLICT DO NOTHING;
+        ON CONFLICT (game_id, player_id) DO UPDATE SET
+            tfl = EXCLUDED.tfl,
+            def_td = EXCLUDED.def_td,
+            sacks = EXCLUDED.sacks,
+            qb_hits = EXCLUDED.qb_hits,
+            fumbles = EXCLUDED.fumbles,
+            fumbles_lost = EXCLUDED.fumbles_lost,
+            solo_tackles = EXCLUDED.solo_tackles,
+            total_tackles = EXCLUDED.total_tackles,
+            forced_fumbles = EXCLUDED.forced_fumbles,
+            pass_deflections = EXCLUDED.pass_deflections,
+            fumbles_recovered = EXCLUDED.fumbles_recovered,
+            defensive_interceptions = EXCLUDED.defensive_interceptions,
+            int = EXCLUDED.int,
+            qbr = EXCLUDED.qbr,
+            rtg = EXCLUDED.rtg,
+            pass_td = EXCLUDED.pass_td,
+            sacked = EXCLUDED.sacked,
+            pass_avg = EXCLUDED.pass_avg,
+            pass_yds = EXCLUDED.pass_yds,
+            pass_attempts = EXCLUDED.pass_attempts,
+            pass_completions = EXCLUDED.pass_completions,
+            rush_td = EXCLUDED.rush_td,
+            carries = EXCLUDED.carries,
+            rush_avg = EXCLUDED.rush_avg,
+            rush_yds = EXCLUDED.rush_yds,
+            long_rush = EXCLUDED.long_rush,
+            rec_td = EXCLUDED.rec_td,
+            rec_avg = EXCLUDED.rec_avg,
+            rec_yds = EXCLUDED.rec_yds,
+            long_rec = EXCLUDED.long_rec,
+            targets = EXCLUDED.targets,
+            receptions = EXCLUDED.receptions,
+            kick_returns = EXCLUDED.kick_returns,
+            kick_return_td = EXCLUDED.kick_return_td,
+            kick_return_avg = EXCLUDED.kick_return_avg,
+            kick_return_yds = EXCLUDED.kick_return_yds,
+            kick_return_long = EXCLUDED.kick_return_long,
+            kick_fg = EXCLUDED.kick_fg,
+            kick_extra_points = EXCLUDED.kick_extra_points,
+            kick_points = EXCLUDED.kick_points;
         """
 
         logging.info("  inserting game stats")
