@@ -292,6 +292,7 @@ async def main():
                 id, team_id, name, height, position, injuries
             ) VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT (id) DO UPDATE SET
+                team_id = EXCLUDED.team_id,
                 injuries = EXCLUDED.injuries
             """,
             [
