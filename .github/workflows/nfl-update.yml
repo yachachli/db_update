@@ -2,7 +2,7 @@ name: Daily NFL Database Update
 
 on:
   schedule:
-    - cron: "0 12 * * *" # Runs daily at 4 AM PT (12:00 UTC; adjust for DST if needed)
+    - cron: "0 9 * * *" # Runs daily at 4 AM PT (12:00 UTC; adjust for DST if needed)
   workflow_dispatch:
 
 jobs:
