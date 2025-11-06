@@ -175,7 +175,7 @@ async def _update_injuries(pool: DBPool, client: httpx.AsyncClient) -> None:
                 """
                 UPDATE nba_players
                 SET injury = NULL
-                WHERE player_id <> ALL($1::int[])
+                WHERE player_id <> ALL($1::bigint[])
                 """,
                 players_with_injury,
             )
