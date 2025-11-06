@@ -39,7 +39,7 @@ async def _upsert_player_game_stat(conn: DBConnection, player_id: int, game_id: 
     opponent = ""
     game_date: date | None = None
     team_abv = stats.get("teamAbv", "")
-    team_id = stats.get("teamID", None)
+    team_id = int_safe(stats.get("teamID"))
 
     if game_id:
         try:
