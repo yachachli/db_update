@@ -24,7 +24,7 @@ def float_safe(v: t.Any) -> float:
 def decimal_safe(v: t.Any) -> decimal.Decimal:
     try:
         return decimal.Decimal(v)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, decimal.InvalidOperation):
         return decimal.Decimal(0)
 
 
