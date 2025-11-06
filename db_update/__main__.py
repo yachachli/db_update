@@ -3,7 +3,6 @@ import sys
 
 from db_update.db_pool import db_pool
 from db_update.logger import setup_logging
-from db_update.runners import mlb, wnba, nba
 
 
 async def main():
@@ -17,10 +16,13 @@ async def main():
 
     match sys.argv[1]:
         case "mlb":
+            from db_update.runners import mlb
             await mlb.run(pool)
         case "nba":
+            from db_update.runners import nba
             await nba.run(pool)
         case "wnba":
+            from db_update.runners import wnba
             await wnba.run(pool)
         case sport:
             print(f"Unknown sport: {sport}. Usage: {sys.argv[0]} <sport>")
