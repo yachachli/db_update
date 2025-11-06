@@ -148,7 +148,7 @@ async def _update_injuries(pool: DBPool, client: httpx.AsyncClient) -> None:
         if prev is None or (inj.get("injDate") or "") > (prev.get("injDate") or ""):
             latest[pid] = inj
 
-    players_with_injury = tuple(int(pid) for pid in latest.keys()) or (None,)
+    players_with_injury = [int(pid) for pid in latest.keys()]
 
     async def upsert_injury(conn: DBConnection, pid: int, inj: dict[str, Any]):
         await conn.execute(
@@ -157,8 +157,8 @@ async def _update_injuries(pool: DBPool, client: httpx.AsyncClient) -> None:
             SET injury = $1::jsonb
             WHERE player_id = $2
             """,
-            [inj],
-            pid,
+            __import__("json").dumps([inj]),
+            int(pid),
         )
 
     await batch_db(
@@ -169,17 +169,17 @@ async def _update_injuries(pool: DBPool, client: httpx.AsyncClient) -> None:
         ),
     )
 
-    async def clear_others(conn: DBConnection):
-        await conn.execute(
-            """
-            UPDATE nba_players
-            SET injury = NULL
-            WHERE player_id NOT IN (SELECT UNNEST($1::int[]))
-            """,
-            list(players_with_injury) if players_with_injury != (None,) else [],
-        )
-
-    await batch_db(pool, (functools.partial(clear_others),))
+    if players_with_injury:
+        async def clear_others(conn: DBConnection):
+            await conn.execute(
+                """
+                UPDATE nba_players
+                SET injury = NULL
+                WHERE player_id <> ALL($1::int[])
+                """,
+                players_with_injury,
+            )
+        await batch_db(pool, (functools.partial(clear_others),))
 
 
 async def _update_player_info_and_season(pool: DBPool, client: httpx.AsyncClient) -> None:
