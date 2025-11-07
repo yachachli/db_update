@@ -215,7 +215,7 @@ async def _update_player_info_and_season(pool: DBPool, client: httpx.AsyncClient
             WHERE player_id = $3
             """,
             p.get("nbaComHeadshot"),
-            p.get("teamID"),
+            int_safe(p.get("teamID")),
             int_safe(p.get("playerID")),
         )
 
@@ -224,7 +224,7 @@ async def _update_player_info_and_season(pool: DBPool, client: httpx.AsyncClient
             "SELECT id FROM nba_seasons WHERE season_year = $1",
             now_year,
         )
-        season_id = season_id_row[0] if season_id_row else None
+        season_id = int_safe(season_id_row[0]) if season_id_row else None
         if not season_id:
             return
         s = p.get("stats") or {}
