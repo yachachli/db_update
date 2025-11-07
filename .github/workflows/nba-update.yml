@@ -2,6 +2,8 @@ name: Daily NBA DB Update
 
 on:
   # Temporarily disable scheduled runs; trigger manually when needed.
+  schedule:
+    - cron: "0 7 * * *" # Runs daily at 11:00 PM PST (07:00 UTC). Update for DST if needed.
   workflow_dispatch:
 
 jobs:
