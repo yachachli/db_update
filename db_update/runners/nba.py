@@ -334,17 +334,17 @@ async def _update_teams(pool: DBPool, client: httpx.AsyncClient) -> None:
                 team_fga = $8, team_fgm = $9, team_fta = $10, team_tov = $11
             WHERE LOWER(name) = LOWER($12)
             """,
-            t.get("ppg"),
-            t.get("oppg"),
-            t.get("wins"),
-            t.get("loss"),
-            (t.get("defensiveStats", {}).get("blk", {}) or {}).get("Total"),
-            (t.get("defensiveStats", {}).get("stl", {}) or {}).get("Total"),
-            (t.get("offensiveStats", {}).get("ast", {}) or {}).get("Total"),
-            (t.get("offensiveStats", {}).get("fga", {}) or {}).get("Total"),
-            (t.get("offensiveStats", {}).get("fgm", {}) or {}).get("Total"),
-            (t.get("offensiveStats", {}).get("fta", {}) or {}).get("Total"),
-            (t.get("defensiveStats", {}).get("TOV", {}) or {}).get("Total"),
+            float_safe(t.get("ppg")),
+            float_safe(t.get("oppg")),
+            int_safe(t.get("wins")),
+            int_safe(t.get("loss")),
+            float_safe((t.get("defensiveStats", {}).get("blk", {}) or {}).get("Total")),
+            float_safe((t.get("defensiveStats", {}).get("stl", {}) or {}).get("Total")),
+            float_safe((t.get("offensiveStats", {}).get("ast", {}) or {}).get("Total")),
+            float_safe((t.get("offensiveStats", {}).get("fga", {}) or {}).get("Total")),
+            float_safe((t.get("offensiveStats", {}).get("fgm", {}) or {}).get("Total")),
+            float_safe((t.get("offensiveStats", {}).get("fta", {}) or {}).get("Total")),
+            float_safe((t.get("defensiveStats", {}).get("TOV", {}) or {}).get("Total")),
             team_name,
         )
 
