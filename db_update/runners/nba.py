@@ -5,6 +5,8 @@ from datetime import date, datetime
 from typing import Any
 
 import httpx
+import random
+import time
 
 from db_update.db_pool import DBConnection, DBPool
 from db_update.logger import logger
@@ -15,17 +17,50 @@ RAPIDAPI_HOST = "tank01-fantasy-stats.p.rapidapi.com"
 
 
 async def _fetch_json(client: httpx.AsyncClient, url: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-    r = await client.get(
-        url,
-        params=params,
-        headers={
-            "x-rapidapi-host": RAPIDAPI_HOST,
-            "x-rapidapi-key": client.headers.get("x-rapidapi-key", ""),
-        },
-        timeout=60,
-    )
-    r.raise_for_status()
-    return r.json()
+    # Basic retry with exponential backoff and Retry-After support for 429
+    attempts = 0
+    last_exc: Exception | None = None
+    while attempts < 6:
+        attempts += 1
+        r = await client.get(
+            url,
+            params=params,
+            headers={
+                "x-rapidapi-host": RAPIDAPI_HOST,
+                "x-rapidapi-key": client.headers.get("x-rapidapi-key", ""),
+            },
+            timeout=60,
+        )
+        if r.status_code == 429:
+            retry_after = r.headers.get("Retry-After")
+            try:
+                wait_s = float(retry_after) if retry_after is not None else min(2 ** attempts, 30)
+            except ValueError:
+                wait_s = min(2 ** attempts, 30)
+            # jitter
+            wait_s += random.uniform(0, 0.25)
+            logger.warning(f"429 from {url}, retrying in {wait_s:.2f}s (attempt {attempts})")
+            await asyncio.sleep(wait_s)
+            continue
+        if 500 <= r.status_code < 600:
+            wait_s = min(2 ** attempts, 20) + random.uniform(0, 0.25)
+            logger.warning(f"{r.status_code} from {url}, retrying in {wait_s:.2f}s (attempt {attempts})")
+            await asyncio.sleep(wait_s)
+            continue
+        try:
+            r.raise_for_status()
+            return r.json()
+        except httpx.HTTPStatusError as exc:
+            last_exc = exc
+            break
+        except Exception as exc:
+            last_exc = exc
+            wait_s = min(2 ** attempts, 10) + random.uniform(0, 0.25)
+            logger.warning(f"Error fetching {url}: {exc}, retrying in {wait_s:.2f}s (attempt {attempts})")
+            await asyncio.sleep(wait_s)
+            continue
+    assert last_exc is not None
+    raise last_exc
 
 
 async def _get_player_ids(conn: DBConnection) -> list[int]:
@@ -373,7 +408,8 @@ async def run(pool: DBPool):
             body = data.get("body") if data.get("statusCode") == 200 else None
             return pid, body or {}
 
-        games_results = await batch((fetch_player_games(pid) for pid in player_ids), batch_size=50)
+        # Use a smaller batch size to avoid RapidAPI 429 throttling
+        games_results = await batch((fetch_player_games(pid) for pid in player_ids), batch_size=20)
 
         logger.info("[1] upserting player game stats")
         async def upsert_for_player(conn: DBConnection, pid: int, stats_map: dict[str, Any]):
