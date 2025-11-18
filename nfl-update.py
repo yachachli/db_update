@@ -33,7 +33,7 @@ class APIClient:
     def __init__(
         self,
         base_url: str,
-        timeout: int = 10,
+        timeout: int = 30,
         headers: dict | None = None,
         save_dir: str | None = None,
     ):
@@ -99,6 +99,35 @@ class APIClient:
 
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
         assert self.client is not None
+
+        attempts = 0
+        while attempts < 6:
+            attempts += 1
+            response = await self.client.get(url, params=params, headers=headers)
+            # 429 handling
+            if response.status_code == 429:
+                retry_after = response.headers.get("Retry-After")
+                try:
+                    wait_s = float(retry_after) if retry_after is not None else min(2**attempts, 30)
+                except ValueError:
+                    wait_s = min(2**attempts, 30)
+                await asyncio.sleep(wait_s)
+                continue
+            # 5xx handling
+            if 500 <= response.status_code < 600:
+                await asyncio.sleep(min(2**attempts, 20))
+                continue
+            try:
+                response.raise_for_status()
+                response_json = response.json()
+                await self._save_response(response_json, endpoint)
+                return response_json
+            except httpx.ReadTimeout:
+                await asyncio.sleep(min(2**attempts, 20))
+                continue
+            except Exception:
+                raise
+        # final attempt without swallow
         response = await self.client.get(url, params=params, headers=headers)
         response.raise_for_status()
         response_json = response.json()
@@ -326,7 +355,7 @@ async def main():
 
         logging.info("  fetching player stats")
         num_players = len(rows_players)
-        fetch_batch_size = 50
+        fetch_batch_size = 40
         async with client:
             for i in range(0, num_players, fetch_batch_size):
                 logging.info(f"    {i}/{num_players}")
