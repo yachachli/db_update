@@ -173,7 +173,7 @@ async def main():
                     "schedules": "false",
                     "topPerformers": "false",
                     "teamStats": "true",
-                    "teamStatsSeason": datetime.now().year,
+                    "teamStatsSeason": 2025,
                 },
             )
             logging.info(f"  got {len(data_teams['body'])} teams")
@@ -245,9 +245,19 @@ async def main():
         """
         batch_data = []
         for team in teams:
-            # Safely access Defense stats, defaulting to empty dict if not present
+            # Safely access Defense stats from teamStats, defaulting to empty dict if not present
             team_stats = team.get("teamStats", {})
             defense_stats = team_stats.get("Defense", {}) if isinstance(team_stats, dict) else {}
+            
+            # Helper function to safely get int value from defense stats (values are strings)
+            def get_stat_int(stat_name, default=0):
+                stat_value = defense_stats.get(stat_name, default)
+                if stat_value is None:
+                    return default
+                try:
+                    return int(stat_value)
+                except (ValueError, TypeError):
+                    return default
             
             batch_data.append((
                 team["name"],
@@ -257,21 +267,21 @@ async def main():
                 int(team["tie"]),
                 int(team["pf"]),
                 int(team["pa"]),
-                int(defense_stats.get("totalTackles", 0)),
-                int(defense_stats.get("fumblesLost", 0)),
-                int(defense_stats.get("defTD", 0)),
-                int(defense_stats.get("fumblesRecovered", 0)),
-                int(defense_stats.get("soloTackles", 0)),
-                int(defense_stats.get("defensiveInterceptions", 0)),
-                int(defense_stats.get("qbHits", 0)),
-                int(defense_stats.get("tfl", 0)),
-                int(defense_stats.get("passDeflections", 0)),
-                int(defense_stats.get("sacks", 0)),
-                int(defense_stats.get("fumbles", 0)),
-                int(defense_stats.get("passingTDAllowed", 0)),
-                int(defense_stats.get("passingYardsAllowed", 0)),
-                int(defense_stats.get("rushingYardsAllowed", 0)),
-                int(defense_stats.get("rushingTDAllowed", 0)),
+                get_stat_int("totalTackles"),
+                get_stat_int("fumblesLost"),
+                get_stat_int("defTD"),
+                get_stat_int("fumblesRecovered"),
+                get_stat_int("soloTackles"),
+                get_stat_int("defensiveInterceptions"),
+                get_stat_int("qbHits"),
+                get_stat_int("tfl"),
+                get_stat_int("passDeflections"),
+                get_stat_int("sacks"),
+                get_stat_int("fumbles"),
+                get_stat_int("passingTDAllowed"),
+                get_stat_int("passingYardsAllowed"),
+                get_stat_int("rushingYardsAllowed"),
+                get_stat_int("rushingTDAllowed"),
             ))
 
         await conn.executemany(query, batch_data)
