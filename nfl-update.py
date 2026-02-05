@@ -243,8 +243,13 @@ async def main():
             rushing_yards_allowed = EXCLUDED.rushing_yards_allowed,
             rushing_td_allowed = EXCLUDED.rushing_td_allowed
         """
-        batch_data = [
-            (
+        batch_data = []
+        for team in teams:
+            # Safely access Defense stats, defaulting to empty dict if not present
+            team_stats = team.get("teamStats", {})
+            defense_stats = team_stats.get("Defense", {}) if isinstance(team_stats, dict) else {}
+            
+            batch_data.append((
                 team["name"],
                 team["teamAbv"],
                 int(team["wins"]),
@@ -252,24 +257,22 @@ async def main():
                 int(team["tie"]),
                 int(team["pf"]),
                 int(team["pa"]),
-                int(team["teamStats"]["Defense"]["totalTackles"]),
-                int(team["teamStats"]["Defense"]["fumblesLost"]),
-                int(team["teamStats"]["Defense"]["defTD"]),
-                int(team["teamStats"]["Defense"]["fumblesRecovered"]),
-                int(team["teamStats"]["Defense"]["soloTackles"]),
-                int(team["teamStats"]["Defense"]["defensiveInterceptions"]),
-                int(team["teamStats"]["Defense"]["qbHits"]),
-                int(team["teamStats"]["Defense"]["tfl"]),
-                int(team["teamStats"]["Defense"]["passDeflections"]),
-                int(team["teamStats"]["Defense"]["sacks"]),
-                int(team["teamStats"]["Defense"]["fumbles"]),
-                int(team["teamStats"]["Defense"]["passingTDAllowed"]),
-                int(team["teamStats"]["Defense"]["passingYardsAllowed"]),
-                int(team["teamStats"]["Defense"]["rushingYardsAllowed"]),
-                int(team["teamStats"]["Defense"]["rushingTDAllowed"]),
-            )
-            for team in teams
-        ]
+                int(defense_stats.get("totalTackles", 0)),
+                int(defense_stats.get("fumblesLost", 0)),
+                int(defense_stats.get("defTD", 0)),
+                int(defense_stats.get("fumblesRecovered", 0)),
+                int(defense_stats.get("soloTackles", 0)),
+                int(defense_stats.get("defensiveInterceptions", 0)),
+                int(defense_stats.get("qbHits", 0)),
+                int(defense_stats.get("tfl", 0)),
+                int(defense_stats.get("passDeflections", 0)),
+                int(defense_stats.get("sacks", 0)),
+                int(defense_stats.get("fumbles", 0)),
+                int(defense_stats.get("passingTDAllowed", 0)),
+                int(defense_stats.get("passingYardsAllowed", 0)),
+                int(defense_stats.get("rushingYardsAllowed", 0)),
+                int(defense_stats.get("rushingTDAllowed", 0)),
+            ))
 
         await conn.executemany(query, batch_data)
         logging.info("inserted teams")
