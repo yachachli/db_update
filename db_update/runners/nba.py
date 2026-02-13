@@ -386,6 +386,131 @@ async def _update_teams(pool: DBPool, client: httpx.AsyncClient) -> None:
     await batch_db(pool, (functools.partial(update_one, team_name=name) for name in team_names))
 
 
+async def _update_team_defense_by_position(pool: DBPool) -> None:
+    """
+    Calculate and update team defense statistics by opponent position.
+    This aggregates game stats to show how well each team defends against each position.
+    """
+    season_year = str(datetime.now().year)
+    current_date = datetime.now().date()
+    year_start = datetime(current_date.year, 1, 1).date()
+    
+    logger.info(f"[5] Starting team defense by position update for season {season_year}")
+    logger.info(f"[5] Filtering games from {year_start} onwards (current date: {current_date})")
+    
+    async with pool.acquire() as conn:
+        # Check how many game stats rows we have to work with
+        stats_count = await conn.fetchval("""
+            SELECT COUNT(*) 
+            FROM nba_player_game_stats gs
+            INNER JOIN nba_players p ON gs.player_id = p.player_id
+            WHERE gs.opponent IS NOT NULL 
+                AND p.position IS NOT NULL
+                AND gs.game_date >= DATE_TRUNC('year', CURRENT_DATE)
+                AND gs.points IS NOT NULL
+        """)
+        logger.info(f"[5] Found {stats_count} player-game stats rows matching criteria")
+        
+        # Check date range of available data
+        date_range = await conn.fetchrow("""
+            SELECT 
+                MIN(gs.game_date) AS min_date,
+                MAX(gs.game_date) AS max_date,
+                COUNT(DISTINCT gs.game_date) AS distinct_dates
+            FROM nba_player_game_stats gs
+            WHERE gs.game_date >= DATE_TRUNC('year', CURRENT_DATE)
+        """)
+        if date_range:
+            logger.info(f"[5] Available game date range: {date_range['min_date']} to {date_range['max_date']} ({date_range['distinct_dates']} distinct dates)")
+        
+        # Delete existing data for current season to avoid duplicates
+        existing_count = await conn.fetchval("""
+            SELECT COUNT(*) FROM nba_team_defense_by_position WHERE season = $1
+        """, season_year)
+        if existing_count > 0:
+            await conn.execute("""
+                DELETE FROM nba_team_defense_by_position 
+                WHERE season = $1
+            """, season_year)
+            logger.info(f"[5] Deleted {existing_count} existing rows for season {season_year}")
+        else:
+            logger.info(f"[5] No existing rows to delete for season {season_year}")
+        
+        # Query to calculate defense stats by position
+        # First aggregate by game to get totals per game, then average across games
+        # This ensures we get per-game averages, not per-player averages
+        rows = await conn.fetch("""
+            WITH game_totals AS (
+                SELECT 
+                    gs.opponent AS team_abv,
+                    gs.game_id,
+                    p.position AS vs_position,
+                    SUM(gs.points) AS game_points,
+                    SUM(gs.rebounds) AS game_rebounds,
+                    SUM(gs.assists) AS game_assists
+                FROM nba_player_game_stats gs
+                INNER JOIN nba_players p ON gs.player_id = p.player_id
+                WHERE gs.opponent IS NOT NULL 
+                    AND p.position IS NOT NULL
+                    AND gs.game_date >= DATE_TRUNC('year', CURRENT_DATE)
+                    AND gs.points IS NOT NULL
+                GROUP BY gs.opponent, gs.game_id, p.position
+            )
+            SELECT 
+                team_abv,
+                $1::VARCHAR AS season,
+                vs_position,
+                COALESCE(AVG(game_points), 0) AS pts_allowed_per_game,
+                COALESCE(AVG(game_rebounds), 0) AS reb_allowed_per_game,
+                COALESCE(AVG(game_assists), 0) AS ast_allowed_per_game,
+                COUNT(*) AS games_sample_size
+            FROM game_totals
+            GROUP BY team_abv, vs_position
+            HAVING COUNT(*) > 0
+        """, season_year)
+        
+        logger.info(f"[5] Calculated defense-by-position stats for {len(rows)} team-position combinations")
+        
+        if len(rows) == 0:
+            logger.warning(f"[5] WARNING: No defense-by-position stats calculated! This might indicate:")
+            logger.warning(f"[5]   - Date filtering issue (games might be in different year)")
+            logger.warning(f"[5]   - Missing opponent/position data in game stats")
+            logger.warning(f"[5]   - No game data available for current season")
+        elif len(rows) < 30:  # Roughly 30 teams * 5 positions = 150, so <30 is suspicious
+            logger.warning(f"[5] WARNING: Only {len(rows)} team-position combinations found (expected ~150 for 30 teams * 5 positions)")
+            logger.warning(f"[5] This might indicate incomplete data or date filtering issues")
+        
+        # Log a sample of the data being inserted
+        if rows:
+            sample = rows[0]
+            logger.info(f"[5] Sample row: {sample['team_abv']} vs {sample['vs_position']} - "
+                      f"{sample['pts_allowed_per_game']:.1f} pts, {sample['reb_allowed_per_game']:.1f} reb, "
+                      f"{sample['ast_allowed_per_game']:.1f} ast ({sample['games_sample_size']} games)")
+        
+        # Insert each row
+        inserted_count = 0
+        for row in rows:
+            await conn.execute("""
+                INSERT INTO nba_team_defense_by_position (
+                    team_abv, season, vs_position,
+                    pts_allowed_per_game, reb_allowed_per_game, ast_allowed_per_game,
+                    games_sample_size
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+            """,
+                row["team_abv"],
+                row["season"],
+                row["vs_position"],
+                float_safe(row["pts_allowed_per_game"]),
+                float_safe(row["reb_allowed_per_game"]),
+                float_safe(row["ast_allowed_per_game"]),
+                int_safe(row["games_sample_size"]),
+            )
+            inserted_count += 1
+        
+        logger.info(f"[5] Successfully inserted {inserted_count} team defense-by-position records")
+
+
 async def run(pool: DBPool):
     logger.info("Starting async NBA update")
     # httpx client with key from env (Actions will pass RAPIDAPI_KEY)
@@ -437,6 +562,10 @@ async def run(pool: DBPool):
         # Block 4: Team stats
         logger.info("[4] updating team stats")
         await _update_teams(pool, client)
+
+        # Block 5: Team defense by position
+        logger.info("[5] updating team defense by position")
+        await _update_team_defense_by_position(pool)
 
     logger.info("Async NBA update done")
 
