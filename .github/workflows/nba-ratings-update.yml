@@ -1,0 +1,33 @@
+name: NBA Team Ratings Update
+
+on:
+  schedule:
+    # 12:45 AM PST = 8:45 UTC (15 min after game update)
+    - cron: "45 8 * * *"
+  workflow_dispatch:
+
+jobs:
+  update-ratings:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install sqlalchemy psycopg2-binary pandas numpy
+
+      - name: Run ratings update pipeline
+        env:
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASS: ${{ secrets.DB_PASSWORD }}
+          DB_HOST: ${{ secrets.DB_HOST }}
+        run: |
+          python -m nba_ratings_update
