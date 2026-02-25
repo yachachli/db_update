@@ -16,12 +16,15 @@ from db_update.utils import batch, batch_db, decimal_safe, float_safe, int_safe
 RAPIDAPI_HOST = "tank01-fantasy-stats.p.rapidapi.com"
 
 # Semaphore to limit concurrent API requests globally
-_api_semaphore = asyncio.Semaphore(3)
+# Reduced to 1 to be very conservative with rate limits
+_api_semaphore = asyncio.Semaphore(1)
 
 
 async def _fetch_json(client: httpx.AsyncClient, url: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
     # Use semaphore to limit concurrent requests
     async with _api_semaphore:
+        # Small delay before each request to space them out
+        await asyncio.sleep(0.5)
         # Basic retry with exponential backoff and Retry-After support for 429
         attempts = 0
         last_exc: Exception | None = None
@@ -45,17 +48,41 @@ async def _fetch_json(client: httpx.AsyncClient, url: str, params: dict[str, Any
                 # jitter
                 wait_s += random.uniform(0, 0.25)
                 logger.warning(f"429 from {url}, retrying in {wait_s:.2f}s (attempt {attempts})")
+                # Set last_exc in case we exhaust all retries
+                last_exc = httpx.HTTPStatusError(
+                    f"429 Too Many Requests after {attempts} attempts",
+                    request=r.request,
+                    response=r,
+                )
+                if attempts >= 6:
+                    break
                 await asyncio.sleep(wait_s)
                 continue
             if r.status_code == 403:
                 # 403 Forbidden - likely due to rate limit violations, use longer backoff
                 wait_s = min(60 * attempts, 300) + random.uniform(0, 10)  # Up to 5 minutes
                 logger.warning(f"403 from {url}, retrying in {wait_s:.2f}s (attempt {attempts})")
+                # Set last_exc in case we exhaust all retries
+                last_exc = httpx.HTTPStatusError(
+                    f"403 Forbidden after {attempts} attempts",
+                    request=r.request,
+                    response=r,
+                )
+                if attempts >= 6:
+                    break
                 await asyncio.sleep(wait_s)
                 continue
             if 500 <= r.status_code < 600:
                 wait_s = min(2 ** attempts, 20) + random.uniform(0, 0.25)
                 logger.warning(f"{r.status_code} from {url}, retrying in {wait_s:.2f}s (attempt {attempts})")
+                # Set last_exc in case we exhaust all retries
+                last_exc = httpx.HTTPStatusError(
+                    f"{r.status_code} Server Error after {attempts} attempts",
+                    request=r.request,
+                    response=r,
+                )
+                if attempts >= 6:
+                    break
                 await asyncio.sleep(wait_s)
                 continue
             try:
@@ -550,16 +577,16 @@ async def run(pool: DBPool):
         import itertools
         games_results: list[tuple[int, dict[str, dict[str, Any]]]] = []
         tasks = [fetch_player_games(pid) for pid in player_ids]
-        batch_size = 5
+        batch_size = 3  # Further reduced batch size
         total = 0
         for batch_tasks in itertools.batched(tasks, batch_size):
             batch_results = await asyncio.gather(*batch_tasks)
             games_results.extend(batch_results)
             total += len(batch_tasks)
             logger.info(f"  {total} of {len(tasks)}")
-            # Small delay between batches to avoid overwhelming the API
+            # Longer delay between batches to avoid overwhelming the API
             if total < len(tasks):
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(2.0)  # Increased delay between batches
 
         logger.info("[1] upserting player game stats")
         async def upsert_for_player(conn: DBConnection, pid: int, stats_map: dict[str, Any]):
