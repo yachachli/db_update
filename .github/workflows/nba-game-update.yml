@@ -25,10 +25,11 @@ jobs:
 
       - name: Run game update pipeline
         env:
+          DB_URL: ${{ secrets.DB_URL }}
           DB_NAME: ${{ secrets.DB_NAME }}
           DB_USER: ${{ secrets.DB_USER }}
           DB_PASS: ${{ secrets.DB_PASSWORD }}
           DB_HOST: ${{ secrets.DB_HOST }}
-          TANK01_API_KEY: ${{ secrets.TANK01_API_KEY }}
+          RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
         run: |
           python -m nba_game_update

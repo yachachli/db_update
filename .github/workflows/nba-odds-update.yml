@@ -25,6 +25,7 @@ jobs:
 
       - name: Run odds update pipeline
         env:
+          DB_URL: ${{ secrets.DB_URL }}
           DB_NAME: ${{ secrets.DB_NAME }}
           DB_USER: ${{ secrets.DB_USER }}
           DB_PASS: ${{ secrets.DB_PASSWORD }}

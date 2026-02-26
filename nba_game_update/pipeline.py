@@ -28,9 +28,10 @@ UPSERT_SQL = text("""
 
 
 def run_game_update(engine):
-    api_key = os.getenv("TANK01_API_KEY")
+    # RAPIDAPI_KEY = db_update repo convention; TANK01_API_KEY = nba_predictor
+    api_key = os.getenv("RAPIDAPI_KEY") or os.getenv("TANK01_API_KEY")
     if not api_key:
-        raise RuntimeError("TANK01_API_KEY not set")
+        raise RuntimeError("Set RAPIDAPI_KEY or TANK01_API_KEY")
 
     pst = timezone(timedelta(hours=-8))
     now_pst = datetime.now(pst)

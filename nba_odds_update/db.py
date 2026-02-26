@@ -18,7 +18,8 @@ def get_engine():
     if _engine is not None:
         return _engine
 
-    url = os.getenv("DATABASE_URL") or os.getenv("DB_URL")
+    # DB_URL = db_update repo convention; DATABASE_URL = nba_predictor / common
+    url = os.getenv("DB_URL") or os.getenv("DATABASE_URL")
     if not url:
         user = os.getenv("DB_USER")
         pw = os.getenv("DB_PASS") or os.getenv("DB_PASSWORD")
@@ -26,7 +27,7 @@ def get_engine():
         name = os.getenv("DB_NAME")
         if not all([user, pw, host, name]):
             raise RuntimeError(
-                "Set DATABASE_URL or DB_USER/DB_PASS/DB_HOST/DB_NAME"
+                "Set DB_URL, DATABASE_URL, or DB_USER/DB_PASS/DB_HOST/DB_NAME"
             )
         url = f"postgresql://{user}:{pw}@{host}/{name}?sslmode=require"
 
