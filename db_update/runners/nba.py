@@ -47,10 +47,14 @@ async def _fetch_json(client: httpx.AsyncClient, url: str, params: dict[str, Any
                     wait_s = min(2 ** attempts, 30)
                 # jitter
                 wait_s += random.uniform(0, 0.25)
-                logger.warning(f"429 from {url}, retrying in {wait_s:.2f}s (attempt {attempts})")
+                # Check for quota info in headers
+                quota_info = ""
+                if "x-ratelimit-requests-remaining" in r.headers:
+                    quota_info = f" (remaining: {r.headers.get('x-ratelimit-requests-remaining', 'unknown')})"
+                logger.warning(f"429 Too Many Requests from {url}{quota_info}, retrying in {wait_s:.2f}s (attempt {attempts})")
                 # Set last_exc in case we exhaust all retries
                 last_exc = httpx.HTTPStatusError(
-                    f"429 Too Many Requests after {attempts} attempts",
+                    f"429 Too Many Requests after {attempts} attempts{quota_info}",
                     request=r.request,
                     response=r,
                 )
@@ -59,12 +63,20 @@ async def _fetch_json(client: httpx.AsyncClient, url: str, params: dict[str, Any
                 await asyncio.sleep(wait_s)
                 continue
             if r.status_code == 403:
-                # 403 Forbidden - likely due to rate limit violations, use longer backoff
+                # 403 Forbidden - likely due to rate limit violations or quota exhaustion
+                # Check response for quota information
+                quota_info = ""
+                if "x-ratelimit-requests-limit" in r.headers:
+                    quota_info = f" (quota: {r.headers.get('x-ratelimit-requests-remaining', 'unknown')}/{r.headers.get('x-ratelimit-requests-limit', 'unknown')})"
+                elif "X-RateLimit-Remaining" in r.headers:
+                    quota_info = f" (remaining: {r.headers.get('X-RateLimit-Remaining', 'unknown')})"
+                
                 wait_s = min(60 * attempts, 300) + random.uniform(0, 10)  # Up to 5 minutes
-                logger.warning(f"403 from {url}, retrying in {wait_s:.2f}s (attempt {attempts})")
+                logger.warning(f"403 Forbidden from {url}{quota_info}, retrying in {wait_s:.2f}s (attempt {attempts})")
+                logger.warning("If this persists, you may have hit your daily/monthly quota. Check RapidAPI dashboard and wait for quota reset.")
                 # Set last_exc in case we exhaust all retries
                 last_exc = httpx.HTTPStatusError(
-                    f"403 Forbidden after {attempts} attempts",
+                    f"403 Forbidden after {attempts} attempts{quota_info}. This may indicate quota exhaustion - check your RapidAPI dashboard.",
                     request=r.request,
                     response=r,
                 )
@@ -210,18 +222,24 @@ async def _update_injuries(pool: DBPool, client: httpx.AsyncClient) -> None:
         return (not x) or (x >= today)
 
     # pick most recent injury per player
-    latest: dict[str, dict[str, Any]] = {}
+    latest: dict[int, dict[str, Any]] = {}
     for inj in injury_list:
         if not is_current(inj):
             continue
-        pid = inj.get("playerID")
-        if not pid:
+        pid_raw = inj.get("playerID")
+        if not pid_raw:
+            continue
+        # Normalize playerID to int for consistent dictionary keys
+        try:
+            pid = int(pid_raw)
+        except (ValueError, TypeError):
+            logger.warning(f"Skipping injury with invalid playerID: {pid_raw}")
             continue
         prev = latest.get(pid)
         if prev is None or (inj.get("injDate") or "") > (prev.get("injDate") or ""):
             latest[pid] = inj
 
-    players_with_injury = [int(pid) for pid in latest.keys()]
+    players_with_injury = list(latest.keys())
 
     async def upsert_injury(conn: DBConnection, pid: int, inj: dict[str, Any]):
         await conn.execute(
@@ -231,7 +249,7 @@ async def _update_injuries(pool: DBPool, client: httpx.AsyncClient) -> None:
             WHERE player_id = $2
             """,
             __import__("json").dumps([inj]),
-            int(pid),
+            pid,
         )
 
     await batch_db(

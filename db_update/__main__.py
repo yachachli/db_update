@@ -21,6 +21,9 @@ async def main():
         case "nba":
             from db_update.runners import nba
             await nba.run(pool)
+        case "nba-injuries":
+            from db_update.runners import nba_injuries
+            await nba_injuries.run(pool)
         case "wnba":
             from db_update.runners import wnba
             await wnba.run(pool)

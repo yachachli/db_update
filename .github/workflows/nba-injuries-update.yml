@@ -1,0 +1,36 @@
+name: NBA Injury Update
+
+on:
+  schedule:
+    # Every 6 hours: 6 AM, 12 PM, 6 PM, 12 AM PST
+    # (14, 20, 02, 08 UTC)
+    - cron: "0 8,14,20,2 * * *"
+  workflow_dispatch:
+
+jobs:
+  update-injuries:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: "3.12"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install httpx asyncpg msgspec
+
+      - name: Run NBA Injury Update
+        env:
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASS: ${{ secrets.DB_PASSWORD }}
+          DB_HOST: ${{ secrets.DB_HOST }}
+          RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
+        run: |
+          python -m db_update nba-injuries
