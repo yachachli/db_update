@@ -1,0 +1,45 @@
+name: NBA Game Results Backfill - February 2025
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: 'Start date (YYYYMMDD)'
+        required: true
+        default: '20250201'
+        type: string
+      end_date:
+        description: 'End date (YYYYMMDD)'
+        required: true
+        default: '20250228'
+        type: string
+
+jobs:
+  backfill-games:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install sqlalchemy psycopg2-binary pandas requests
+
+      - name: Run February backfill
+        env:
+          DB_URL: ${{ secrets.DB_URL }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASS: ${{ secrets.DB_PASSWORD }}
+          DB_HOST: ${{ secrets.DB_HOST }}
+          RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
+          BACKFILL_START: ${{ github.event.inputs.start_date }}
+          BACKFILL_END: ${{ github.event.inputs.end_date }}
+        run: |
+          python -m nba_game_update
