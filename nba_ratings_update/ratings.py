@@ -22,24 +22,33 @@ ADJEM_PARAMS = {
 LEAGUE_AVG_EFFICIENCY = 110.0
 
 
+def _parse_date(d) -> datetime | None:
+    """Parse game_date from DB (string, date, or timestamp) to date for comparison."""
+    if d is None:
+        return None
+    s = str(d).strip()
+    # Handle ISO with T and Z (e.g. 2025-10-22T00:00:00 or 2025-10-22T00:00:00Z)
+    if "T" in s:
+        s = s.split("T")[0]
+    elif " " in s:
+        s = s.split(" ")[0]
+    for fmt in ("%Y-%m-%d", "%Y%m%d"):
+        try:
+            return datetime.strptime(s, fmt)
+        except ValueError:
+            continue
+    return None
+
+
 def _game_weight(game_date, prediction_date, half_life=30, floor=0.10):
-    for fmt in ("%Y-%m-%d", "%Y%m%d"):
-        try:
-            gd = datetime.strptime(str(game_date), fmt)
-            break
-        except ValueError:
-            gd = None
-    for fmt in ("%Y-%m-%d", "%Y%m%d"):
-        try:
-            pd_ = datetime.strptime(str(prediction_date), fmt)
-            break
-        except ValueError:
-            pd_ = None
+    gd = _parse_date(game_date)
+    pd_ = _parse_date(prediction_date)
     if gd is None or pd_ is None:
         return 1.0
     days = (pd_ - gd).days
+    # Never return 0: if game is "in the future" (e.g. timezone), treat as today (use floor)
     if days < 0:
-        return 0.0
+        return floor
     return max(math.pow(0.5, days / half_life), floor)
 
 
@@ -57,18 +66,24 @@ def calculate_ratings(games_df: pd.DataFrame, prediction_date: str = None) -> li
     Returns a list of dicts: team, adj_em, adj_o, adj_d, games
     """
     df = games_df.copy()
-    df["possessions"] = (df["home_score"] + df["away_score"]) / 2.0
-    df["home_off_eff"] = df["home_score"] / df["possessions"] * 100
-    df["away_off_eff"] = df["away_score"] / df["possessions"] * 100
-    df["home_def_eff"] = df["away_score"] / df["possessions"] * 100
-    df["away_def_eff"] = df["home_score"] / df["possessions"] * 100
+    # Ensure numeric; guard vs zero possessions (would give inf/nan)
+    home_score = pd.to_numeric(df["home_score"], errors="coerce").fillna(0)
+    away_score = pd.to_numeric(df["away_score"], errors="coerce").fillna(0)
+    df["possessions"] = ((home_score + away_score) / 2.0).replace(0, 1.0)
+    df["home_off_eff"] = home_score / df["possessions"] * 100
+    df["away_off_eff"] = away_score / df["possessions"] * 100
+    df["home_def_eff"] = away_score / df["possessions"] * 100
+    df["away_def_eff"] = home_score / df["possessions"] * 100
 
     if prediction_date and "game_date" in df.columns:
         hl = ADJEM_PARAMS["half_life_days"]
         fl = ADJEM_PARAMS["weight_floor"]
         df["weight"] = df["game_date"].apply(
-            lambda d: _game_weight(str(d).split(" ")[0], prediction_date, hl, fl)
+            lambda d: _game_weight(d, prediction_date, hl, fl)
         )
+        # If all weights ended up zero (shouldn't happen now), fall back to equal weight
+        if df["weight"].sum() == 0:
+            df["weight"] = 1.0
     else:
         df["weight"] = 1.0
 
