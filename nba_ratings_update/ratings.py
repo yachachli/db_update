@@ -142,6 +142,9 @@ def calculate_ratings(games_df: pd.DataFrame, prediction_date: str = None) -> li
             blend = reg * (g / min_g)
             ratings[t]["adj_o"] = blend * ratings[t]["adj_o"] + (1 - blend) * LEAGUE_AVG_EFFICIENCY
             ratings[t]["adj_d"] = blend * ratings[t]["adj_d"] + (1 - blend) * LEAGUE_AVG_EFFICIENCY
+        # Fallback: if iteration left adj_d at league avg for a team with many games, use raw_d so we get variance
+        if g >= min_g and abs(ratings[t]["adj_d"] - LEAGUE_AVG_EFFICIENCY) < 0.01:
+            ratings[t]["adj_d"] = ratings[t]["raw_d"]
 
     results = []
     for t, r in ratings.items():
