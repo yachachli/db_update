@@ -44,9 +44,16 @@ def run_ratings_update(engine):
 
     print(f"  Loaded {len(games_df)} completed games for {SEASON}")
 
-    prediction_date = datetime.now().strftime("%Y-%m-%d")
+    # Use equal weights (no recency) so adj_d/adj_o always get updated regardless of date parsing
+    prediction_date = None
     ratings = calculate_ratings(games_df, prediction_date=prediction_date)
     print(f"  Calculated ratings for {len(ratings)} teams")
+
+    # Debug: show adj_off and adj_def for first few teams (should vary, not all 110)
+    for r in ratings[:5]:
+        print(f"  [sample] {r['team']}: adj_off={r['adj_o']:.2f} adj_def={r['adj_d']:.2f} adj_em={r['adj_em']:.2f}")
+    def_range = [r["adj_d"] for r in ratings]
+    print(f"  adj_def range: min={min(def_range):.2f} max={max(def_range):.2f} (should not both be 110)")
 
     last_game = str(games_df["game_date"].max())
 
@@ -64,12 +71,12 @@ def run_ratings_update(engine):
 
     print(f"  Upserted {len(ratings)} ratings to nba_team_ratings")
 
-    # Verify
+    # Verify what was written (including adj_def)
     verify = query_df("""
-        SELECT team, adj_em, games FROM nba_team_ratings
+        SELECT team, adj_em, adj_off, adj_def, games FROM nba_team_ratings
         WHERE season = :season ORDER BY adj_em DESC LIMIT 5
     """, params={"season": SEASON})
-    print(f"  Top 5:")
+    print(f"  Top 5 in DB after write:")
     for _, row in verify.iterrows():
-        print(f"    {row['team']}: AdjEM {row['adj_em']:+.2f} ({row['games']}g)")
+        print(f"    {row['team']}: adj_em={row['adj_em']:+.2f} adj_off={row['adj_off']:.2f} adj_def={row['adj_def']:.2f} ({row['games']}g)")
     print("  Done.")
