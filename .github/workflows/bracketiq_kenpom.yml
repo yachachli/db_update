@@ -1,0 +1,32 @@
+# BracketIQ — KenPom tables only. Run manually to verify KenPom refresh + push.
+name: BracketIQ KenPom Only
+
+on:
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: bracketiq
+
+jobs:
+  kenpom:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Create cache dir
+        run: mkdir -p app/data/cache
+      - name: Refresh KenPom Cache
+        env:
+          KENPOM_EMAIL: ${{ secrets.KENPOM_EMAIL }}
+          KENPOM_PASSWORD: ${{ secrets.KENPOM_PASSWORD }}
+        run: python -m scripts.refresh_kenpom_cache
+      - name: Push KenPom to Neon
+        env:
+          NEON_DATABASE_URL: ${{ secrets.DB_URL }}
+        run: python -m scripts.push_to_neon --only kenpom

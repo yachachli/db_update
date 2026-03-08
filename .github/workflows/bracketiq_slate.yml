@@ -1,0 +1,45 @@
+# BracketIQ — Slate table only. Run manually to verify slate generation + push.
+# Assumes KenPom cache already exists (run KenPom workflow first if needed).
+name: BracketIQ Slate Only
+
+on:
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: bracketiq
+
+jobs:
+  slate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Create data directories
+        run: |
+          mkdir -p app/data/cache
+          mkdir -p app/data/historical
+          mkdir -p data/analysis
+      - name: Pull Historical from Neon (for today's FanMatch if any)
+        env:
+          NEON_DATABASE_URL: ${{ secrets.DB_URL }}
+        run: python -m scripts.pull_from_neon
+        continue-on-error: true
+      - name: Refresh KenPom Cache (needed for slate)
+        env:
+          KENPOM_EMAIL: ${{ secrets.KENPOM_EMAIL }}
+          KENPOM_PASSWORD: ${{ secrets.KENPOM_PASSWORD }}
+        run: python -m scripts.refresh_kenpom_cache
+      - name: Generate Slate
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+        run: python -m scripts.slate_today
+      - name: Push Slate to Neon
+        env:
+          NEON_DATABASE_URL: ${{ secrets.DB_URL }}
+        run: python -m scripts.push_to_neon --only slate

@@ -1,0 +1,28 @@
+# Data files (generated at runtime, pushed to Neon — do not commit)
+app/data/cache/*.parquet
+app/data/historical/*.parquet
+data/analysis/*.json
+data/analysis/*.csv
+data/analysis/*.txt
+data/historical/*.parquet
+data/historical/*.txt
+
+# Environment (never commit secrets)
+.env
+.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

@@ -8,3 +8,11 @@ __pycache__
 schema.sql
 
 .cache/
+
+# BracketIQ generated data
+bracketiq/app/data/cache/*.parquet
+bracketiq/app/data/historical/*.parquet
+bracketiq/data/cache/*.parquet
+bracketiq/data/analysis/*.json
+bracketiq/data/analysis/*.csv
+bracketiq/data/analysis/*.txt

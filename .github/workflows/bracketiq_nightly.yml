@@ -1,0 +1,72 @@
+# BracketIQ nightly update. Add this to db_update repo's .github/workflows/.
+# Uses DB_URL to match repo secrets (same as NBA folders). Scripts read NEON_DATABASE_URL or DB_URL.
+name: BracketIQ Nightly Update
+
+on:
+  schedule:
+    - cron: '0 8 * * *'   # 8 AM UTC = 3 AM EST
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: bracketiq
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Create data directories
+        run: |
+          mkdir -p app/data/cache
+          mkdir -p app/data/historical
+          mkdir -p data/analysis
+
+      - name: Pull Historical from Neon
+        env:
+          NEON_DATABASE_URL: ${{ secrets.DB_URL }}  # repo uses DB_URL; scripts accept either
+        run: python -m scripts.pull_from_neon
+        continue-on-error: true
+
+      - name: Refresh KenPom Cache
+        env:
+          KENPOM_EMAIL: ${{ secrets.KENPOM_EMAIL }}
+          KENPOM_PASSWORD: ${{ secrets.KENPOM_PASSWORD }}
+        run: python -m scripts.refresh_kenpom_cache
+
+      - name: Collect FanMatch
+        env:
+          KENPOM_EMAIL: ${{ secrets.KENPOM_EMAIL }}
+          KENPOM_PASSWORD: ${{ secrets.KENPOM_PASSWORD }}
+        run: python -m scripts.collect_historical_fanmatch
+        continue-on-error: true
+
+      - name: Collect Odds
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+        run: python -m scripts.collect_historical_odds
+        continue-on-error: true
+
+      - name: Build ATS Dataset
+        run: python -m scripts.build_ats_dataset
+        continue-on-error: true
+
+      - name: Generate Slate
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+        run: python -m scripts.slate_today
+
+      - name: Push to Neon
+        env:
+          NEON_DATABASE_URL: ${{ secrets.DB_URL }}  # repo uses DB_URL; scripts accept either
+        run: python -m scripts.push_to_neon
