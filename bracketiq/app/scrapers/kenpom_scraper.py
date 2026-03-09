@@ -13,7 +13,9 @@ from typing import Any, Callable, Optional
 
 import pandas as pd
 
-from kenpompy.utils import login
+from bs4 import BeautifulSoup
+
+from kenpompy.utils import login, get_html
 import kenpompy.summary as kp_summary
 import kenpompy.misc as kp_misc
 from kenpompy.team import get_schedule
@@ -26,6 +28,9 @@ from app.config import get_cache_dir, get_historical_dir, settings
 RATE_LIMIT_SEC = 8
 JITTER_SEC = (1, 3)
 
+# URL used to verify we're logged in (summary page; has data tables when access is OK)
+_VERIFY_URL = "https://kenpom.com/summary.php?y=2026"
+
 
 def _delay() -> None:
     """Apply rate limit + jitter."""
@@ -37,6 +42,21 @@ def get_kenpom_browser():
     if not settings.KENPOM_EMAIL or not settings.KENPOM_PASSWORD:
         raise ValueError("Set KENPOM_EMAIL and KENPOM_PASSWORD in .env")
     return login(settings.KENPOM_EMAIL, settings.KENPOM_PASSWORD)
+
+
+def verify_kenpom_login(browser) -> None:
+    """
+    Fetch a KenPom data page and check that it contains tables.
+    If not (e.g. login wall or block in CI), raise a clear error so you know to check credentials/secrets.
+    """
+    html = get_html(browser, _VERIFY_URL)
+    soup = BeautifulSoup(html, "html.parser")
+    tables = soup.find_all("table")
+    if not tables:
+        raise RuntimeError(
+            "KenPom returned a page with no data tables—login or access likely failed (common in CI). "
+            "Check that KENPOM_EMAIL and KENPOM_PASSWORD secrets are set correctly and that your KenPom account is valid."
+        )
 
 
 def get_cached_or_scrape(

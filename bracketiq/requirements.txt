@@ -1,7 +1,7 @@
 # BracketIQ backend dependencies
 # KenPom scraper (install from PyPI or GitHub)
-# https://github.com/j-andrews7/kenpompy
-kenpompy>=0.3.0
+# https://github.com/j-andrews7/kenpompy (v0.5.0 has new-season + login fixes)
+kenpompy>=0.5.0
 
 # API & server
 fastapi>=0.104.0
