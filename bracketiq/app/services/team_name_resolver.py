@@ -176,20 +176,36 @@ def find_team_row(
     return None
 
 
+# Column aliases: KenPom cache may use AdjT; Neon/parquet may use adj_tempo. Try all so we always get tempo.
+_RATING_COL_ALIASES: dict[str, list[str]] = {
+    "AdjT": ["AdjT", "adj_tempo", "AdjTempo", "adj_t"],
+    "AdjO": ["AdjO", "adj_oe", "AdjOE"],
+    "AdjD": ["AdjD", "adj_de", "AdjDE"],
+}
+
+
 def get_rating(
     df: pd.DataFrame | None,
     kenpom_name: str,
     col: str,
-    default: float = 100.0,
-) -> float:
-    """Get a numeric rating (e.g. AdjO, AdjD, AdjT) for a team from a KenPom dataframe."""
+    default: Optional[float] = 100.0,
+) -> Optional[float]:
+    """Get a numeric rating (e.g. AdjO, AdjD, AdjT) for a team from a KenPom dataframe.
+    Tries column aliases (AdjT/adj_tempo etc.) so we get the value whether source is parquet or Neon.
+    If default is None and the value is missing, returns None (caller can flag/skip)."""
     row = find_team_row(df, kenpom_name)
     if row is None:
         return default
-    v = row.get(col)
-    if v is None or (isinstance(v, float) and np.isnan(v)):
-        return default
-    try:
-        return float(v)
-    except (TypeError, ValueError):
-        return default
+    aliases = _RATING_COL_ALIASES.get(col, [])
+    candidates = [col] + [a for a in aliases if a != col]
+    for c in candidates:
+        if c not in row.index and c not in row:
+            continue
+        v = row.get(c)
+        if v is None or (isinstance(v, float) and np.isnan(v)):
+            continue
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            continue
+    return default

@@ -243,15 +243,18 @@ def main() -> int:
             key = (row["home_canon"].lower(), row["away_canon"].lower())
             fm_lookup[key] = row
     # Precompute tempo rank by cache Team name (1=fastest, higher=slower; bottom 100 = rank > 265)
-    if "AdjT" in pomeroy.columns and "Team" in pomeroy.columns:
-        _tr = pomeroy[["Team", "AdjT"]].copy()
-        _tr["_tempo_rank"] = _tr["AdjT"].rank(method="min").astype(int)
-        tempo_ranks = dict(zip(_tr["Team"].astype(str), _tr["_tempo_rank"]))
+    tempo_col = "AdjT" if "AdjT" in pomeroy.columns else ("adj_tempo" if "adj_tempo" in pomeroy.columns else None)
+    team_col = "Team" if "Team" in pomeroy.columns else ("team" if "team" in pomeroy.columns else None)
+    if tempo_col and team_col:
+        _tr = pomeroy[[team_col, tempo_col]].copy()
+        _tr["_tempo_rank"] = _tr[tempo_col].rank(method="min").astype(int)
+        tempo_ranks = dict(zip(_tr[team_col].astype(str), _tr["_tempo_rank"]))
     else:
         tempo_ranks = {}
     parsed = []
     skipped_unresolved = 0
     skipped_extreme_spread = 0
+    skipped_no_tempo = 0
     for g in games_raw:
         if not isinstance(g, dict):
             continue
@@ -273,16 +276,20 @@ def main() -> int:
         prob_home_vegas, prob_away_vegas = parse_moneyline(g)
         adjO_h = _get_rating(pomeroy, home_kp, "AdjO", 100.0)
         adjD_h = _get_rating(pomeroy, home_kp, "AdjD", 100.0)
-        adjT_h = _get_rating(pomeroy, home_kp, "AdjT", 67.0)
+        adjT_h = _get_rating(pomeroy, home_kp, "AdjT", None)
         adjO_a = _get_rating(pomeroy, away_kp, "AdjO", 100.0)
         adjD_a = _get_rating(pomeroy, away_kp, "AdjD", 100.0)
-        adjT_a = _get_rating(pomeroy, away_kp, "AdjT", 67.0)
+        adjT_a = _get_rating(pomeroy, away_kp, "AdjT", None)
+        if adjT_h is None or adjT_a is None:
+            skipped_no_tempo += 1
+            continue
         tempo = (adjT_h + adjT_a) / 2.0
-        # Never use raw per-100 as point margin (causes huge wrong edges when tempo is 0/missing)
-        tempo_pts = tempo if tempo and float(tempo) > 0 else 67.0
+        if tempo <= 0:
+            skipped_no_tempo += 1
+            continue
         # Our model (with recency): used only for game winner / moneyline
         eff_margin_per_100 = (adjO_h - adjD_a) - (adjO_a - adjD_h) + HOME_COURT_ADVANTAGE
-        our_margin = eff_margin_per_100 * (tempo_pts / 100.0)
+        our_margin = eff_margin_per_100 * (tempo / 100.0)
         recency_adj = _recency_adjustment(home_kp, away_kp, pomeroy)
         our_margin = our_margin + recency_adj
         our_margin = max(-MAX_PREDICTED_MARGIN, min(MAX_PREDICTED_MARGIN, our_margin))
@@ -308,7 +315,7 @@ def main() -> int:
             ou_source = "kenpom_fanmatch" if predicted_total is not None else None
         else:
             margin_for_spread = our_margin
-            predicted_total = tempo_pts * (adjO_h + adjO_a) / 100.0
+            predicted_total = tempo * (adjO_h + adjO_a) / 100.0
             spread_source = "our_model"
             ou_source = "our_model" if predicted_total is not None else None
         spread_edge = margin_for_spread + vegas_spread
@@ -349,6 +356,8 @@ def main() -> int:
         print(f"Skipped {skipped_unresolved} games (team name not found in KenPom cache).", file=sys.stderr)
     if skipped_extreme_spread:
         print(f"Skipped {skipped_extreme_spread} games (|vegas_spread| > {MAX_VEGAS_SPREAD_ABS}).", file=sys.stderr)
+    if skipped_no_tempo:
+        print(f"Skipped {skipped_no_tempo} games (missing or invalid tempo in KenPom cache).", file=sys.stderr)
     if not parsed:
         print("No games with spread data.")
         return 0
