@@ -278,25 +278,37 @@ def main() -> int:
         adjD_a = _get_rating(pomeroy, away_kp, "AdjD", 100.0)
         adjT_a = _get_rating(pomeroy, away_kp, "AdjT", 67.0)
         tempo = (adjT_h + adjT_a) / 2.0
+        # Never use raw per-100 as point margin (causes huge wrong edges when tempo is 0/missing)
+        tempo_pts = tempo if tempo and float(tempo) > 0 else 67.0
         # Our model (with recency): used only for game winner / moneyline
         eff_margin_per_100 = (adjO_h - adjD_a) - (adjO_a - adjD_h) + HOME_COURT_ADVANTAGE
-        our_margin = eff_margin_per_100 * (tempo / 100.0) if tempo else eff_margin_per_100
+        our_margin = eff_margin_per_100 * (tempo_pts / 100.0)
         recency_adj = _recency_adjustment(home_kp, away_kp, pomeroy)
         our_margin = our_margin + recency_adj
         our_margin = max(-MAX_PREDICTED_MARGIN, min(MAX_PREDICTED_MARGIN, our_margin))
         win_prob_home = float(norm.cdf(our_margin / MARGIN_SIGMA))
         moneyline_edge = (win_prob_home - prob_home_vegas) if prob_home_vegas is not None else None
-        # Spread & O/U: prefer KenPom FanMatch when we have a match; else our formula
-        fm_key = (resolve_to_canonical_kenpom(home_kp).lower(), resolve_to_canonical_kenpom(away_kp).lower())
+        # Spread & O/U: prefer KenPom FanMatch when we have a match; else our formula.
+        # For neutral-site games Odds API may list home/away opposite to FanMatch (e.g. FanMatch
+        # "Oregon St vs Gonzaga" = away, home; API may say home=Oregon St). Try both orderings.
+        home_canon = resolve_to_canonical_kenpom(home_kp).lower()
+        away_canon = resolve_to_canonical_kenpom(away_kp).lower()
+        fm_key = (home_canon, away_canon)
+        fm_key_rev = (away_canon, home_canon)
         fm = fm_lookup.get(fm_key)
+        reversed_fm = False
+        if fm is None:
+            fm = fm_lookup.get(fm_key_rev)
+            reversed_fm = fm is not None
         if fm is not None:
-            margin_for_spread = fm["kp_margin_home_pov"]
+            # FanMatch margin is home POV; if we matched on (away, home), our "home" is FanMatch's away → negate
+            margin_for_spread = fm["kp_margin_home_pov"] if not reversed_fm else -fm["kp_margin_home_pov"]
             predicted_total = fm.get("kp_total")
             spread_source = "kenpom_fanmatch"
             ou_source = "kenpom_fanmatch" if predicted_total is not None else None
         else:
             margin_for_spread = our_margin
-            predicted_total = tempo * (adjO_h + adjO_a) / 100.0 if tempo else None
+            predicted_total = tempo_pts * (adjO_h + adjO_a) / 100.0
             spread_source = "our_model"
             ou_source = "our_model" if predicted_total is not None else None
         spread_edge = margin_for_spread + vegas_spread
