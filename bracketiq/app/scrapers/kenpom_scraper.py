@@ -165,9 +165,17 @@ def _kpoy_list_to_df(kpoy_dfs: list) -> pd.DataFrame:
 
 
 def get_fanmatch_for_date(browser, date: str) -> Optional[FanMatch]:
-    """Fetch FanMatch for a given date (YYYY-MM-DD). Applies rate limit before call."""
+    """Fetch FanMatch for a given date (YYYY-MM-DD). Applies rate limit before call.
+    Returns None on failure (e.g. kenpompy TypeError when PredictedMOV row is a float)."""
     _delay()
-    return FanMatch(browser, date=date)
+    try:
+        return FanMatch(browser, date=date)
+    except (TypeError, AttributeError) as e:
+        # kenpompy can raise TypeError: object of type 'float' has no len() when
+        # PredictedMOV column has a float instead of a score pair for some rows
+        import sys
+        print(f"  FanMatch {date} skipped: {type(e).__name__} — {e}", file=sys.stderr)
+        return None
 
 
 def get_team_schedule(browser, team: str, season: Optional[str] = None) -> pd.DataFrame:

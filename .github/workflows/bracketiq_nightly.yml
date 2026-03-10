@@ -66,6 +66,7 @@ jobs:
           KENPOM_EMAIL: ${{ secrets.KENPOM_EMAIL }}
           KENPOM_PASSWORD: ${{ secrets.KENPOM_PASSWORD }}
         run: python -m scripts.collect_historical_fanmatch --today-only
+        continue-on-error: true
 
       - name: Generate Slate
         env:
