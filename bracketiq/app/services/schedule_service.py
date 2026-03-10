@@ -70,6 +70,18 @@ def parse_fanmatch_game(game_str: str) -> Optional[dict]:
             "is_neutral": False,
         }
 
+    # "14 Xavier at 32 Marquette BIG EAST" — conference can be multi-word (BIG EAST, BIG TEN, etc.)
+    at_long_conf = re.match(r"^(\d+)\s+(.+?)\s+at\s+(\d+)\s+(.+?)\s+([A-Z][A-Z0-9\s]{2,30})$", s)
+    if at_long_conf:
+        return {
+            "away_team": at_long_conf.group(2).strip(),
+            "away_rank": int(at_long_conf.group(1)),
+            "home_team": at_long_conf.group(4).strip(),
+            "home_rank": int(at_long_conf.group(3)),
+            "conference": at_long_conf.group(5).strip(),
+            "is_neutral": False,
+        }
+
     # Fallback: "rank Team at rank Team" without conference
     at_simple = re.match(r"^(\d+)\s+(.+?)\s+at\s+(\d+)\s+(.+)$", s)
     if at_simple:

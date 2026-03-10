@@ -116,6 +116,12 @@ def _push_slate(engine):
         print(f"  SKIP {TABLE_PREFIX}slate_today (no games)")
         return
     df = pd.DataFrame(games)
+    # Serialize nested dict columns so PostgreSQL can store them (e.g. markets)
+    for col in df.columns:
+        if df[col].dtype == object and df[col].notna().any():
+            sample = df[col].dropna().iloc[0]
+            if isinstance(sample, dict):
+                df[col] = df[col].apply(lambda x: json.dumps(x) if isinstance(x, dict) else x)
     _push(engine, "slate_today", df)
 
 

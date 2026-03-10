@@ -12,6 +12,7 @@ Requires: ODDS_API_KEY in .env, KenPom cache (pomeroy_ratings_*.parquet). Run co
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -42,23 +43,42 @@ EDGE_COVER_RATES = {"NO_EDGE": "50.7%", "MILD": "52.8%", "STRONG": "54.3%", "HIG
 
 def _normalize_fm_key(name: str) -> str:
     """Normalize team name for FanMatch lookup so all 300+ teams match regardless of variant.
-    Handles: 'Oregon St.' vs 'Oregon St', trailing/leading space, double spaces, case."""
+    Handles: 'Oregon St.' vs 'Oregon State', trailing conference names (e.g. 'BIG EAST'), case."""
     if not name or not isinstance(name, str):
         return ""
     s = name.strip().lower().rstrip(".")
     while "  " in s:
         s = s.replace("  ", " ")
+    # Strip trailing conference name (e.g. "marquette big east" -> "marquette") if parser included it
+    s = re.sub(r"\s+(big east|big ten|big 12|acc|sec|aac|wcc|mwc|pac-?12|ivy|mvc|atlantic 10|big west|maac|horizon|summit|wac|conference usa|c-usa)$", "", s, flags=re.IGNORECASE).strip()
+    # KenPom uses "St." / "St" for many schools; FanMatch may show "State". Unify so all match.
+    if s.endswith(" st"):
+        s = s[:-3] + " state"
     return s
 
 
 def get_edge_confidence(edge: float) -> str:
-    """Classify spread edge for display; based on historical cover rates by |edge|."""
+    """Classify spread/O-U edge (in points) for display; based on historical cover rates by |edge|."""
     abs_edge = abs(edge) if edge is not None else 0.0
     if abs_edge < 1.0:
         return "NO_EDGE"
     if abs_edge < 3.0:
         return "MILD"
     if abs_edge < 5.0:
+        return "STRONG"
+    return "HIGH_CONVICTION"
+
+
+def get_ml_conviction(moneyline_edge: float | None) -> str:
+    """Classify moneyline edge (in probability units, e.g. 0.05 = 5%) for display."""
+    if moneyline_edge is None:
+        return "NO_VEGAS_ML"
+    abs_edge = abs(moneyline_edge)
+    if abs_edge < 0.01:
+        return "NO_EDGE"
+    if abs_edge < 0.03:
+        return "MILD"
+    if abs_edge < 0.05:
         return "STRONG"
     return "HIGH_CONVICTION"
 
@@ -145,20 +165,28 @@ def _load_today_fanmatch() -> list[dict]:
             continue
         pred_mov = float(pred_mov)
         pred_winner_canon = resolve_to_canonical_kenpom(pred_winner)
-        kp_margin_home_pov = pred_mov if (pred_winner_canon and _normalize_fm_key(pred_winner_canon) == _normalize_fm_key(home_canon)) else -pred_mov
+        home_is_fav = pred_winner_canon and _normalize_fm_key(pred_winner_canon) == _normalize_fm_key(home_canon)
+        kp_margin_home_pov = pred_mov if home_is_fav else -pred_mov
         kp_total = None
+        kp_score_home = None
+        kp_score_away = None
         pred_str = row.get("Prediction") or row.get("PredictedScore") or row.get("prediction")
         if pred_str is not None and not pd.isna(pred_str):
             from app.services.schedule_service import parse_fanmatch_prediction
             parsed_pred = parse_fanmatch_prediction(str(pred_str))
             if parsed_pred and "predicted_score_fav" in parsed_pred and "predicted_score_dog" in parsed_pred:
-                kp_total = float(parsed_pred["predicted_score_fav"]) + float(parsed_pred["predicted_score_dog"])
+                fav_s = float(parsed_pred["predicted_score_fav"])
+                dog_s = float(parsed_pred["predicted_score_dog"])
+                kp_total = fav_s + dog_s
+                kp_score_home = fav_s if home_is_fav else dog_s
+                kp_score_away = dog_s if home_is_fav else fav_s
         home_norm = _normalize_fm_key(home_canon)
         away_norm = _normalize_fm_key(away_canon)
         out.append({
             "home_canon": home_canon, "away_canon": away_canon,
             "home_norm": home_norm, "away_norm": away_norm,
             "kp_margin_home_pov": kp_margin_home_pov, "kp_total": kp_total,
+            "kp_score_home": kp_score_home, "kp_score_away": kp_score_away,
         })
     return out
 
@@ -338,6 +366,15 @@ def main() -> int:
         our_margin = max(-MAX_PREDICTED_MARGIN, min(MAX_PREDICTED_MARGIN, our_margin))
         win_prob_home = float(norm.cdf(our_margin / MARGIN_SIGMA))
         moneyline_edge = (win_prob_home - prob_home_vegas) if prob_home_vegas is not None else None
+        # When Vegas has no ML we still show our model's take so interpretation is never null
+        if prob_home_vegas is None:
+            ml_interpretation = f"No Vegas ML (Model HOME {win_prob_home:.0%} win prob)"
+        elif moneyline_edge is not None and moneyline_edge > 0:
+            ml_interpretation = "Model likes HOME ML"
+        elif moneyline_edge is not None and moneyline_edge < 0:
+            ml_interpretation = "Model likes AWAY ML"
+        else:
+            ml_interpretation = "Model agrees with Vegas ML"
         # Spread & O/U: prefer KenPom FanMatch when we have a match; else our formula.
         # For neutral-site games Odds API may list home/away opposite to FanMatch (e.g. FanMatch
         # "Oregon St vs Gonzaga" = away, home; API may say home=Oregon St). Try both orderings.
@@ -354,10 +391,15 @@ def main() -> int:
             fm = fm_set_to_row.get(frozenset({home_canon_norm, away_canon_norm}))
             if fm is not None:
                 reversed_fm = (fm.get("away_norm") or _normalize_fm_key(fm["away_canon"])) == home_canon_norm
+        kp_score_home = None
+        kp_score_away = None
         if fm is not None:
             # FanMatch margin is home POV; if we matched on (away, home), our "home" is FanMatch's away → negate
             margin_for_spread = fm["kp_margin_home_pov"] if not reversed_fm else -fm["kp_margin_home_pov"]
             predicted_total = fm.get("kp_total")
+            if fm.get("kp_score_home") is not None and fm.get("kp_score_away") is not None:
+                kp_score_home = int(fm["kp_score_away"]) if reversed_fm else int(fm["kp_score_home"])
+                kp_score_away = int(fm["kp_score_home"]) if reversed_fm else int(fm["kp_score_away"])
             spread_source = "kenpom_fanmatch"
             ou_source = "kenpom_fanmatch" if predicted_total is not None else None
         else:
@@ -368,10 +410,45 @@ def main() -> int:
         spread_edge = margin_for_spread + vegas_spread
         ou_edge = (predicted_total - vegas_total) if (predicted_total is not None and vegas_total is not None) else None
         edge_conf = get_edge_confidence(spread_edge)
+        ou_conf = get_edge_confidence(ou_edge) if ou_edge is not None else "NO_EDGE"
         home_row = find_team_row(pomeroy, home_kp)
         home_cache_name = str(home_row.get("Team", home_kp)) if home_row is not None else home_kp
         home_tempo_rank = int(tempo_ranks.get(home_cache_name, 999))
         slow_underdog = (home_tempo_rank > 265 and vegas_spread > 0)
+        ml_conv = get_ml_conviction(moneyline_edge)
+        ou_interp = "Model likes OVER" if (ou_edge is not None and ou_edge > 0) else ("Model likes UNDER" if (ou_edge is not None and ou_edge < 0) else None)
+        # Per-game markets summary for easy JSON interpretation: our predictions vs Vegas + conviction
+        markets = {
+            "moneyline": {
+                "our_win_prob_home": round(win_prob_home, 4),
+                "vegas_implied_prob_home": round(prob_home_vegas, 4) if prob_home_vegas is not None else None,
+                "edge": round(moneyline_edge, 4) if moneyline_edge is not None else None,
+                "conviction": ml_conv,
+                "interpretation": ml_interpretation,
+            },
+            "spread": {
+                "kenpom_margin_home_pov": round(margin_for_spread, 2),
+                "vegas_spread_home_pov": round(vegas_spread, 2),
+                "edge": round(spread_edge, 2),
+                "conviction": edge_conf,
+                "historical_cover_rate": EDGE_COVER_RATES.get(edge_conf, ""),
+                "interpretation": "Model likes HOME vs spread" if spread_edge > 0 else "Model likes AWAY vs spread",
+                "source": spread_source,
+            },
+            "total": {
+                "kenpom_predicted_total": round(predicted_total, 1) if predicted_total is not None else None,
+                "vegas_total": round(vegas_total, 1) if vegas_total is not None else None,
+                "edge": round(ou_edge, 2) if ou_edge is not None else None,
+                "conviction": ou_conf,
+                "interpretation": ou_interp,
+                "source": ou_source,
+            },
+        }
+        if kp_score_home is not None and kp_score_away is not None:
+            markets["spread"]["kenpom_predicted_score_home"] = kp_score_home
+            markets["spread"]["kenpom_predicted_score_away"] = kp_score_away
+            markets["total"]["kenpom_predicted_score_home"] = kp_score_home
+            markets["total"]["kenpom_predicted_score_away"] = kp_score_away
         # Use resolved KenPom names as primary home/away (actual team names); keep Odds API names for reference.
         parsed.append({
             "away_team": away_kp,
@@ -389,18 +466,23 @@ def main() -> int:
             "ou_source": ou_source,
             "kenpom_predicted_margin_home_pov": round(margin_for_spread, 2),
             "kenpom_predicted_total": round(predicted_total, 1) if predicted_total is not None else None,
+            "kenpom_predicted_score_home": kp_score_home,
+            "kenpom_predicted_score_away": kp_score_away,
             "model_win_prob_home": round(win_prob_home, 4),
             "kenpom_win_prob_home": round(win_prob_home, 4),
             "spread_edge": round(spread_edge, 2),
             "spread_edge_confidence": edge_conf,
             "historical_cover_rate": EDGE_COVER_RATES.get(edge_conf, ""),
             "moneyline_edge": round(moneyline_edge, 4) if moneyline_edge is not None else None,
+            "moneyline_conviction": ml_conv,
             "over_under_edge": round(ou_edge, 2) if ou_edge is not None else None,
+            "over_under_conviction": ou_conf,
             "spread_edge_interpretation": "Model likes HOME vs spread" if spread_edge > 0 else "Model likes AWAY vs spread",
-            "moneyline_edge_interpretation": "Model likes HOME ML" if (moneyline_edge is not None and moneyline_edge > 0) else ("Model likes AWAY ML" if (moneyline_edge is not None and moneyline_edge < 0) else None),
-            "ou_edge_interpretation": "Model likes OVER" if (ou_edge is not None and ou_edge > 0) else ("Model likes UNDER" if (ou_edge is not None and ou_edge < 0) else None),
+            "moneyline_edge_interpretation": ml_interpretation,
+            "ou_edge_interpretation": ou_interp,
             "slow_underdog_flag": slow_underdog,
             "slow_underdog_note": "Slow underdogs cover 56.8% historically" if slow_underdog else None,
+            "markets": markets,
         })
     if skipped_unresolved:
         print(f"Skipped {skipped_unresolved} games (team name not found in KenPom cache).", file=sys.stderr)
@@ -448,9 +530,15 @@ def main() -> int:
         "date": "today",
         "total_games": len(parsed),
         "data_sources": {
-            "spread_and_ou": "KenPom FanMatch when game matches today's scrape; else our formula (fallback)",
-            "game_winner_moneyline": "Our model only (recency-adjusted margin -> win prob vs Vegas)",
+            "moneyline": "Our model (recency-adjusted margin -> win prob) vs Vegas implied prob; edge = our_prob - vegas_prob.",
+            "spread": "KenPom FanMatch predicted margin (from PredictedMOV / predicted score) vs Vegas spread; fallback our formula when no FanMatch match.",
+            "total": "KenPom FanMatch predicted total (from Prediction column score) vs Vegas total; fallback our formula when no FanMatch match.",
         },
+        "conviction_tiers": {
+            "spread_and_total": "NO_EDGE (|edge| < 1 pt), MILD (1–3 pt), STRONG (3–5 pt), HIGH_CONVICTION (5+ pt). Historical cover rates by tier in spread.historical_cover_rate.",
+            "moneyline": "NO_EDGE (|edge| < 1%), MILD (1–3%), STRONG (3–5%), HIGH_CONVICTION (5%+). NO_VEGAS_ML when Vegas has no moneyline.",
+        },
+        "per_game": "Each game has a 'markets' object with moneyline, spread, and total: our/KenPom prediction, Vegas line, edge, conviction, and interpretation.",
         "sanity_check": sanity_result,
         "games_sorted_by_spread_edge": by_spread,
         "games_sorted_by_moneyline_edge": by_moneyline,
