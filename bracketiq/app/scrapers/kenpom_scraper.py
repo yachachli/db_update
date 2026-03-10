@@ -19,7 +19,7 @@ from kenpompy.utils import login, get_html
 import kenpompy.summary as kp_summary
 import kenpompy.misc as kp_misc
 from kenpompy.team import get_schedule
-from kenpompy.FanMatch import FanMatch
+from app.scrapers.fanmatch_patched import FanMatch
 
 from app.config import get_cache_dir, get_historical_dir, settings
 
@@ -166,16 +166,9 @@ def _kpoy_list_to_df(kpoy_dfs: list) -> pd.DataFrame:
 
 def get_fanmatch_for_date(browser, date: str) -> Optional[FanMatch]:
     """Fetch FanMatch for a given date (YYYY-MM-DD). Applies rate limit before call.
-    Returns None on failure (e.g. kenpompy TypeError when PredictedMOV row is a float)."""
+    Uses vendored fanmatch_patched (safe PredictedMOV) instead of kenpompy.FanMatch."""
     _delay()
-    try:
-        return FanMatch(browser, date=date)
-    except (TypeError, AttributeError) as e:
-        # kenpompy can raise TypeError: object of type 'float' has no len() when
-        # PredictedMOV column has a float instead of a score pair for some rows
-        import sys
-        print(f"  FanMatch {date} skipped: {type(e).__name__} — {e}", file=sys.stderr)
-        return None
+    return FanMatch(browser, date=date)
 
 
 def get_team_schedule(browser, team: str, season: Optional[str] = None) -> pd.DataFrame:
