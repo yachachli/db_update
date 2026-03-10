@@ -61,6 +61,12 @@ jobs:
         run: python -m scripts.build_ats_dataset
         continue-on-error: true
 
+      - name: Fetch today's FanMatch
+        env:
+          KENPOM_EMAIL: ${{ secrets.KENPOM_EMAIL }}
+          KENPOM_PASSWORD: ${{ secrets.KENPOM_PASSWORD }}
+        run: python -m scripts.collect_historical_fanmatch --today-only
+
       - name: Generate Slate
         env:
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}

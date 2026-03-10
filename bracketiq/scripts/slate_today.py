@@ -40,6 +40,17 @@ SANITY_TOTAL_TOLERANCE = 8.0    # max |our_total - kp_total| to consider "adjace
 EDGE_COVER_RATES = {"NO_EDGE": "50.7%", "MILD": "52.8%", "STRONG": "54.3%", "HIGH_CONVICTION": "66.4%"}
 
 
+def _normalize_fm_key(name: str) -> str:
+    """Normalize team name for FanMatch lookup so all 300+ teams match regardless of variant.
+    Handles: 'Oregon St.' vs 'Oregon St', trailing/leading space, double spaces, case."""
+    if not name or not isinstance(name, str):
+        return ""
+    s = name.strip().lower().rstrip(".")
+    while "  " in s:
+        s = s.replace("  ", " ")
+    return s
+
+
 def get_edge_confidence(edge: float) -> str:
     """Classify spread edge for display; based on historical cover rates by |edge|."""
     abs_edge = abs(edge) if edge is not None else 0.0
@@ -91,7 +102,8 @@ def load_pomeroy() -> pd.DataFrame | None:
 
 
 def _load_today_fanmatch() -> list[dict]:
-    """Load FanMatch rows for today from parquet. Returns list of {home_canon, away_canon, kp_margin_home_pov, kp_total}."""
+    """Load FanMatch rows for today from parquet. Returns list of {home_canon, away_canon, kp_margin_home_pov, kp_total}.
+    Uses normalized keys so 'Oregon St.' and 'Oregon St' match. Tries both 'Game' and 'game' column names."""
     from datetime import datetime, timezone
     from app.config import get_historical_dir
     from app.services.schedule_service import parse_fanmatch_game
@@ -104,14 +116,21 @@ def _load_today_fanmatch() -> list[dict]:
     if not fm_path.exists():
         return []
     df = pd.read_parquet(fm_path)
-    if "fanmatch_date" not in df.columns or "Game" not in df.columns:
+    date_col = "fanmatch_date" if "fanmatch_date" in df.columns else None
+    game_col = "Game" if "Game" in df.columns else ("game" if "game" in df.columns else None)
+    if not date_col or not game_col:
         return []
-    day = df[df["fanmatch_date"].astype(str).str[:10] == today]
+    # Normalize date column to YYYY-MM-DD string for comparison
+    date_series = df[date_col].astype(str).str[:10]
+    day = df[date_series == today]
     if day.empty:
         return []
     out = []
     for _, row in day.iterrows():
-        parsed = parse_fanmatch_game(str(row.get("Game", "")))
+        game_str = str(row.get(game_col, ""))
+        if not game_str:
+            continue
+        parsed = parse_fanmatch_game(game_str)
         if not parsed:
             continue
         home = (parsed.get("home_team") or "").strip()
@@ -120,36 +139,52 @@ def _load_today_fanmatch() -> list[dict]:
             continue
         home_canon = resolve_to_canonical_kenpom(home)
         away_canon = resolve_to_canonical_kenpom(away)
-        pred_mov = row.get("PredictedMOV")
-        pred_winner = (row.get("PredictedWinner") or "").strip()
+        pred_mov = row.get("PredictedMOV") or row.get("predicted_mov")
+        pred_winner = (row.get("PredictedWinner") or row.get("predicted_winner") or "").strip()
         if pred_mov is None or pd.isna(pred_mov):
             continue
         pred_mov = float(pred_mov)
         pred_winner_canon = resolve_to_canonical_kenpom(pred_winner)
-        kp_margin_home_pov = pred_mov if (pred_winner_canon and pred_winner_canon.lower() == home_canon.lower()) else -pred_mov
+        kp_margin_home_pov = pred_mov if (pred_winner_canon and _normalize_fm_key(pred_winner_canon) == _normalize_fm_key(home_canon)) else -pred_mov
         kp_total = None
-        pred_str = row.get("Prediction") or row.get("PredictedScore")
+        pred_str = row.get("Prediction") or row.get("PredictedScore") or row.get("prediction")
         if pred_str is not None and not pd.isna(pred_str):
             from app.services.schedule_service import parse_fanmatch_prediction
             parsed_pred = parse_fanmatch_prediction(str(pred_str))
             if parsed_pred and "predicted_score_fav" in parsed_pred and "predicted_score_dog" in parsed_pred:
                 kp_total = float(parsed_pred["predicted_score_fav"]) + float(parsed_pred["predicted_score_dog"])
-        out.append({"home_canon": home_canon, "away_canon": away_canon, "kp_margin_home_pov": kp_margin_home_pov, "kp_total": kp_total})
+        home_norm = _normalize_fm_key(home_canon)
+        away_norm = _normalize_fm_key(away_canon)
+        out.append({
+            "home_canon": home_canon, "away_canon": away_canon,
+            "home_norm": home_norm, "away_norm": away_norm,
+            "kp_margin_home_pov": kp_margin_home_pov, "kp_total": kp_total,
+        })
     return out
 
 
 def _sanity_check_vs_kenpom(parsed: list[dict], fm_games: list[dict]) -> tuple[list[dict], list[dict]]:
     """Compare our predicted margin/total to KenPom FanMatch. Returns (updated games with sanity fields, list of warning dicts)."""
     from app.services.team_name_resolver import resolve_to_canonical_kenpom
-    key_to_fm = {(g["home_canon"].lower(), g["away_canon"].lower()): g for g in fm_games}
+    key_to_fm = {}
+    set_to_fm = {}
+    for g in fm_games:
+        h_norm = g.get("home_norm") or _normalize_fm_key(g["home_canon"])
+        a_norm = g.get("away_norm") or _normalize_fm_key(g["away_canon"])
+        key_to_fm[(h_norm, a_norm)] = g
+        set_to_fm[frozenset({h_norm, a_norm})] = g
     warnings = []
     for game in parsed:
         home_c = (game.get("home_team_kenpom") or "").strip()
         away_c = (game.get("away_team_kenpom") or "").strip()
         home_canon = resolve_to_canonical_kenpom(home_c) or home_c
         away_canon = resolve_to_canonical_kenpom(away_c) or away_c
-        key = (home_canon.lower(), away_canon.lower())
+        key = (_normalize_fm_key(home_canon), _normalize_fm_key(away_canon))
         fm = key_to_fm.get(key)
+        if fm is None:
+            fm = key_to_fm.get((key[1], key[0]))
+        if fm is None:
+            fm = set_to_fm.get(frozenset({key[0], key[1]}))
         our_margin = game.get("kenpom_predicted_margin_home_pov")
         our_total = game.get("kenpom_predicted_total")
         if fm is None:
@@ -235,13 +270,21 @@ def main() -> int:
         print("No games returned from odds API.")
         return 0
     from app.services.team_name_resolver import find_team_row, resolve_to_canonical_kenpom
-    # FanMatch for today: use KenPom's margin/total for spread & O/U when we have a match
+    # FanMatch for today: use KenPom's margin/total for spread & O/U when we have a match.
+    # Use normalized keys so "Oregon St." and "Oregon St" match.
     fm_today = _load_today_fanmatch()
     fm_lookup = {}
+    fm_set_to_row = {}
     if fm_today:
         for row in fm_today:
-            key = (row["home_canon"].lower(), row["away_canon"].lower())
+            h_norm = row.get("home_norm") or _normalize_fm_key(row["home_canon"])
+            a_norm = row.get("away_norm") or _normalize_fm_key(row["away_canon"])
+            key = (h_norm, a_norm)
             fm_lookup[key] = row
+            fm_set_to_row[frozenset({h_norm, a_norm})] = row
+        print(f"Loaded {len(fm_today)} FanMatch games for today (spread/O/U will use KenPom when match found).", file=sys.stderr)
+    else:
+        print("No FanMatch data for today in fanmatch_2026.parquet — run collect_historical_fanmatch (or --today-only) before slate_today.", file=sys.stderr)
     # Precompute tempo rank by cache Team name (1=fastest, higher=slower; bottom 100 = rank > 265)
     tempo_col = "AdjT" if "AdjT" in pomeroy.columns else ("adj_tempo" if "adj_tempo" in pomeroy.columns else None)
     team_col = "Team" if "Team" in pomeroy.columns else ("team" if "team" in pomeroy.columns else None)
@@ -298,15 +341,19 @@ def main() -> int:
         # Spread & O/U: prefer KenPom FanMatch when we have a match; else our formula.
         # For neutral-site games Odds API may list home/away opposite to FanMatch (e.g. FanMatch
         # "Oregon St vs Gonzaga" = away, home; API may say home=Oregon St). Try both orderings.
-        home_canon = resolve_to_canonical_kenpom(home_kp).lower()
-        away_canon = resolve_to_canonical_kenpom(away_kp).lower()
-        fm_key = (home_canon, away_canon)
-        fm_key_rev = (away_canon, home_canon)
+        home_canon_norm = _normalize_fm_key(resolve_to_canonical_kenpom(home_kp))
+        away_canon_norm = _normalize_fm_key(resolve_to_canonical_kenpom(away_kp))
+        fm_key = (home_canon_norm, away_canon_norm)
+        fm_key_rev = (away_canon_norm, home_canon_norm)
         fm = fm_lookup.get(fm_key)
         reversed_fm = False
         if fm is None:
             fm = fm_lookup.get(fm_key_rev)
             reversed_fm = fm is not None
+        if fm is None:
+            fm = fm_set_to_row.get(frozenset({home_canon_norm, away_canon_norm}))
+            if fm is not None:
+                reversed_fm = (fm.get("away_norm") or _normalize_fm_key(fm["away_canon"])) == home_canon_norm
         if fm is not None:
             # FanMatch margin is home POV; if we matched on (away, home), our "home" is FanMatch's away → negate
             margin_for_spread = fm["kp_margin_home_pov"] if not reversed_fm else -fm["kp_margin_home_pov"]
@@ -325,9 +372,12 @@ def main() -> int:
         home_cache_name = str(home_row.get("Team", home_kp)) if home_row is not None else home_kp
         home_tempo_rank = int(tempo_ranks.get(home_cache_name, 999))
         slow_underdog = (home_tempo_rank > 265 and vegas_spread > 0)
+        # Use resolved KenPom names as primary home/away (actual team names); keep Odds API names for reference.
         parsed.append({
-            "away_team": away_team,
-            "home_team": home_team,
+            "away_team": away_kp,
+            "home_team": home_kp,
+            "away_team_odds_api": away_team,
+            "home_team_odds_api": home_team,
             "away_team_kenpom": away_kp,
             "home_team_kenpom": home_kp,
             "vegas_spread_home_pov": round(vegas_spread, 2),
