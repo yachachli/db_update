@@ -139,6 +139,8 @@ def collect_fanmatch_2026(full_rescrape: bool = False, today_only: bool = False,
         # Checkpoint every N days so you have partial data and can see progress
         if len(rows) > 0 and total_rows > 0 and days_done % CHECKPOINT_EVERY_DAYS == 0:
             consolidated = pd.concat(rows, ignore_index=True)
+            if "Possessions" in consolidated.columns:
+                consolidated["Possessions"] = consolidated["Possessions"].astype(str)
             consolidated.to_parquet(partial_path, index=False)
             print(f"  >> Checkpoint: saved {len(consolidated)} rows to {partial_path.name}")
 
