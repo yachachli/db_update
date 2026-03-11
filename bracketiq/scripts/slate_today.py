@@ -12,7 +12,6 @@ Requires: ODDS_API_KEY in .env, KenPom cache (pomeroy_ratings_*.parquet). Run co
 from __future__ import annotations
 
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -42,19 +41,9 @@ EDGE_COVER_RATES = {"NO_EDGE": "50.7%", "MILD": "52.8%", "STRONG": "54.3%", "HIG
 
 
 def _normalize_fm_key(name: str) -> str:
-    """Normalize team name for FanMatch lookup so all 300+ teams match regardless of variant.
-    Handles: 'Oregon St.' vs 'Oregon State', trailing conference names (e.g. 'BIG EAST'), case."""
-    if not name or not isinstance(name, str):
-        return ""
-    s = name.strip().lower().rstrip(".")
-    while "  " in s:
-        s = s.replace("  ", " ")
-    # Strip trailing conference name (e.g. "marquette big east" -> "marquette") if parser included it
-    s = re.sub(r"\s+(big east|big ten|big 12|acc|sec|aac|wcc|mwc|pac-?12|ivy|mvc|atlantic 10|big west|maac|horizon|summit|wac|conference usa|c-usa)$", "", s, flags=re.IGNORECASE).strip()
-    # KenPom uses "St." / "St" for many schools; FanMatch may show "State". Unify so all match.
-    if s.endswith(" st"):
-        s = s[:-3] + " state"
-    return s
+    """Normalize team name for FanMatch lookup. Delegates to team_name_resolver.fanmatch_match_key."""
+    from app.services.team_name_resolver import fanmatch_match_key
+    return fanmatch_match_key(name)
 
 
 def get_edge_confidence(edge: float) -> str:
@@ -123,7 +112,9 @@ def load_pomeroy() -> pd.DataFrame | None:
 
 def _load_today_fanmatch() -> list[dict]:
     """Load FanMatch rows for today from parquet. Returns list of {home_canon, away_canon, kp_margin_home_pov, kp_total}.
-    Uses normalized keys so 'Oregon St.' and 'Oregon St' match. Tries both 'Game' and 'game' column names."""
+    Uses normalized keys so 'Oregon St.' and 'Oregon St' match. Tries both 'Game' and 'game' column names.
+    If no rows for UTC today, uses the most recent date in the parquet (avoids KenPom US-date vs UTC mismatch)."""
+    import sys
     from datetime import datetime, timezone
     from app.config import get_historical_dir
     from app.services.schedule_service import parse_fanmatch_game
@@ -134,17 +125,28 @@ def _load_today_fanmatch() -> list[dict]:
         hist_dir = Path.cwd() / hist_dir
     fm_path = hist_dir / "fanmatch_2026.parquet"
     if not fm_path.exists():
+        print(f"FanMatch parquet not found: {fm_path}", file=sys.stderr)
         return []
     df = pd.read_parquet(fm_path)
     date_col = "fanmatch_date" if "fanmatch_date" in df.columns else None
     game_col = "Game" if "Game" in df.columns else ("game" if "game" in df.columns else None)
     if not date_col or not game_col:
+        print(f"FanMatch parquet missing fanmatch_date or Game column.", file=sys.stderr)
         return []
     # Normalize date column to YYYY-MM-DD string for comparison
     date_series = df[date_col].astype(str).str[:10]
     day = df[date_series == today]
     if day.empty:
-        return []
+        # Fallback: use most recent date in parquet (KenPom often uses US date; UTC today may have no rows yet)
+        unique_dates = sorted(date_series.dropna().unique(), reverse=True)
+        if not unique_dates:
+            print(f"No fanmatch_date values in parquet.", file=sys.stderr)
+            return []
+        use_date = str(unique_dates[0])[:10]
+        day = df[date_series == use_date]
+        print(f"No FanMatch rows for UTC today ({today}); using latest date in parquet: {use_date} ({len(day)} rows).", file=sys.stderr)
+    else:
+        print(f"Using FanMatch for date {today}: {len(day)} rows.", file=sys.stderr)
     out = []
     for _, row in day.iterrows():
         game_str = str(row.get(game_col, ""))
@@ -170,7 +172,7 @@ def _load_today_fanmatch() -> list[dict]:
         kp_total = None
         kp_score_home = None
         kp_score_away = None
-        pred_str = row.get("Prediction") or row.get("PredictedScore") or row.get("prediction")
+        pred_str = row.get("Prediction") or row.get("PredictedScore") or row.get("prediction") or row.get("predicted_score")
         if pred_str is not None and not pd.isna(pred_str):
             from app.services.schedule_service import parse_fanmatch_prediction
             parsed_pred = parse_fanmatch_prediction(str(pred_str))
@@ -180,6 +182,15 @@ def _load_today_fanmatch() -> list[dict]:
                 kp_total = fav_s + dog_s
                 kp_score_home = fav_s if home_is_fav else dog_s
                 kp_score_away = dog_s if home_is_fav else fav_s
+            else:
+                # Parquet may only have PredictedScore "92-91" (vendored FanMatch drops full Prediction string)
+                parts = str(pred_str).strip().split("-")
+                if len(parts) == 2 and parts[0].strip().isdigit() and parts[1].strip().isdigit():
+                    winner_s = int(parts[0].strip())
+                    loser_s = int(parts[1].strip())
+                    kp_total = winner_s + loser_s
+                    kp_score_home = winner_s if home_is_fav else loser_s
+                    kp_score_away = loser_s if home_is_fav else winner_s
         home_norm = _normalize_fm_key(home_canon)
         away_norm = _normalize_fm_key(away_canon)
         out.append({
@@ -219,7 +230,7 @@ def _sanity_check_vs_kenpom(parsed: list[dict], fm_games: list[dict]) -> tuple[l
             game["kenpom_fanmatch_margin_home_pov"] = None
             game["kenpom_fanmatch_total"] = None
             game["sanity_adjacent"] = None
-            game["sanity_note"] = "No FanMatch row for today"
+            game["sanity_note"] = "No FanMatch row for today (game may not be on KenPom slate for this date, or name mismatch)"
             continue
         kp_margin = fm["kp_margin_home_pov"]
         kp_total = fm.get("kp_total")
@@ -502,10 +513,18 @@ def main() -> int:
             "checked": True,
             "games_compared": games_compared,
             "games_on_slate": len(parsed),
+            "fanmatch_games_available": len(fm_today),
+            "note": "Slate can have more games than KenPom when Vegas lists matchups KenPom does not show for this date.",
             "warnings": sanity_warnings,
             "margin_tolerance_pts": SANITY_MARGIN_TOLERANCE,
             "total_tolerance_pts": SANITY_TOTAL_TOLERANCE,
         }
+        unmatched = len(parsed) - games_compared
+        print(
+            f"FanMatch: {games_compared} games matched of {len(parsed)} on slate (KenPom had {len(fm_today)} games for this date). "
+            f"{unmatched} unmatched may be name mismatch or not on KenPom.",
+            file=sys.stderr,
+        )
         for w in sanity_warnings:
             print(
                 f"  SANITY: {w['away_team']} at {w['home_team']} — {w['note']}",
@@ -531,7 +550,7 @@ def main() -> int:
         "total_games": len(parsed),
         "data_sources": {
             "moneyline": "Our model (recency-adjusted margin -> win prob) vs Vegas implied prob; edge = our_prob - vegas_prob.",
-            "spread": "KenPom FanMatch predicted margin (from PredictedMOV / predicted score) vs Vegas spread; fallback our formula when no FanMatch match.",
+            "spread": "KenPom FanMatch predicted margin (from PredictedMOV / predicted score) vs Vegas spread; fallback our formula when no FanMatch match. Slate may include games Vegas lists that KenPom does not show for this date.",
             "total": "KenPom FanMatch predicted total (from Prediction column score) vs Vegas total; fallback our formula when no FanMatch match.",
         },
         "conviction_tiers": {

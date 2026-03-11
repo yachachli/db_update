@@ -7,6 +7,7 @@ all resolve and lookup names consistently. Prevents mismatches (e.g. Tenn-Martin
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -90,6 +91,29 @@ def resolve_to_canonical_kenpom(any_name: str) -> str:
     if from_odds.lower() in alias_map:
         return alias_map[from_odds.lower()]
     return from_odds
+
+
+def fanmatch_match_key(name: str) -> str:
+    """
+    Single normalization key for FanMatch ↔ slate matching.
+    Use this (or normalize after resolve_to_canonical_kenpom) so both sides use the same key.
+    Handles: St./State, A&M/AM, trailing conference names, case, punctuation.
+    """
+    if not name or not isinstance(name, str):
+        return ""
+    s = name.strip().lower().rstrip(".")
+    while "  " in s:
+        s = s.replace("  ", " ")
+    s = re.sub(
+        r"\s+(big east|big ten|big 12|acc|sec|aac|wcc|mwc|pac-?12|ivy|mvc|atlantic 10|big west|maac|horizon|summit|wac|conference usa|c-usa)$",
+        "",
+        s,
+        flags=re.IGNORECASE,
+    ).strip()
+    if s.endswith(" st"):
+        s = s[:-3] + " state"
+    s = s.replace("&", "")
+    return s
 
 
 def resolve_odds_to_kenpom(odds_name: str) -> str:

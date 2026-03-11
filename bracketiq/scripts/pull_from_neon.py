@@ -12,6 +12,31 @@ from pathlib import Path
 _BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_BASE))
 
+# Load .env so NEON_DATABASE_URL/DB_URL work when run locally
+def _load_dotenv_path(path: Path) -> bool:
+    if path.exists():
+        try:
+            from dotenv import load_dotenv
+            load_dotenv(path)
+            return True
+        except ImportError:
+            pass
+    return False
+
+# 1) Explicit path (e.g. set DOTENV_PATH to backend\.env)
+_env_path = os.environ.get("DOTENV_PATH") or os.environ.get("BACKEND_ENV_PATH")
+if _env_path and _load_dotenv_path(Path(_env_path)):
+    pass
+else:
+    # 2) bracketiq/.env or db_update_clone/.env
+    for _env_dir in (_BASE, _BASE.parent):
+        if _load_dotenv_path(_env_dir / ".env"):
+            break
+    else:
+        # 3) Sibling repo: .../website college basketball model/backend/.env (when both repos on same parent)
+        _sibling_backend = _BASE.parent.parent / "website college basketball model" / "backend" / ".env"
+        _load_dotenv_path(_sibling_backend)
+
 TABLE_PREFIX = "bracketiq_"
 
 
@@ -42,7 +67,8 @@ def main() -> int:
             df = df.drop(columns=["id", "updated_at"], errors="ignore")
             renames = {
                 "game": "Game", "predicted_winner": "PredictedWinner", "predicted_loser": "PredictedLoser",
-                "predicted_mov": "PredictedMOV", "winner": "Winner", "loser": "Loser",
+                "predicted_mov": "PredictedMOV", "predicted_score": "PredictedScore",
+                "winner": "Winner", "loser": "Loser",
                 "winner_score": "WinnerScore", "loser_score": "LoserScore", "actual_mov": "ActualMOV",
                 "location": "Location", "thrill_score": "ThrillScore",
             }

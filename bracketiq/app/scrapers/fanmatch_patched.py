@@ -3,8 +3,12 @@ Vendored FanMatch from kenpompy with defensive fix for PredictedMOV.
 Upstream: https://github.com/j-andrews7/kenpompy/blob/master/kenpompy/FanMatch.py
 Fix: PredictedMOV listcomp can see float when PredictedScore has NaN in some pandas/table cases;
      use a safe helper so we never call len() on a non-sequence.
+Fix: Prediction column may be missing or have non-standard whitespace/unicode; normalize column
+     names, clean prediction text (\\xa0, en-dash, em-dash), and optionally infer Prediction
+     from another column. Set FANMATCH_DEBUG=1 to print raw HTML and DataFrame for diagnosis.
 """
 
+import os
 import pandas as pd
 from io import StringIO
 import re
@@ -14,6 +18,20 @@ from bs4 import BeautifulSoup
 from typing import Optional
 
 from kenpompy.utils import get_html
+
+FANMATCH_DEBUG = os.environ.get("FANMATCH_DEBUG", "").strip().lower() in ("1", "true", "yes")
+
+
+def _clean_prediction_string(s: str) -> str:
+    """Normalize prediction text so regex extraction works (unicode spaces, dashes, etc.)."""
+    if s is None or (isinstance(s, float) and pd.isna(s)):
+        return ""
+    s = str(s).strip()
+    s = s.replace("\xa0", " ")   # non-breaking space
+    s = s.replace("\u2013", "-")  # en-dash
+    s = s.replace("\u2014", "-")  # em-dash
+    s = re.sub(r"\s+", " ", s)   # collapse multiple spaces
+    return s.strip()
 
 
 def _safe_pred_mov(parts) -> float:
@@ -84,9 +102,48 @@ class FanMatch:
                 if extracted_mmdd != user_mmdd:
                     return
         table = fm.find_all("table")[0]
+        if FANMATCH_DEBUG:
+            raw = str(table)[:2000]
+            print("=== RAW HTML TABLE (first 2000 chars) ===", flush=True)
+            print(raw, flush=True)
+            print("=== END RAW HTML ===", flush=True)
+
         fm_df = pd.read_html(StringIO(str(table)))
         fm_df = fm_df[0]
+
+        # Normalize column names (strip whitespace; pd.read_html can produce "Prediction " etc.)
+        fm_df.columns = [str(c).strip() for c in fm_df.columns]
         fm_df = fm_df.rename(columns={"Thrill Score": "ThrillScore", "Come back": "Comeback", "Excite ment": "Excitement"})
+
+        # Ensure we have a Prediction column (KenPom may use different header or structure)
+        if "Prediction" not in fm_df.columns:
+            for col in fm_df.columns:
+                sample = fm_df[col].dropna().astype(str)
+                if len(sample) and re.search(r"\d+-\d+", sample.iloc[0]) and "%" in sample.iloc[0]:
+                    fm_df["Prediction"] = fm_df[col]
+                    if FANMATCH_DEBUG:
+                        print(f"  Inferred Prediction from column '{col}'", flush=True)
+                    break
+            else:
+                fm_df["Prediction"] = ""
+        # Clean prediction text so regex works (non-breaking space, en/em-dash, multiple spaces)
+        if "Prediction" in fm_df.columns:
+            fm_df["Prediction"] = fm_df["Prediction"].apply(_clean_prediction_string)
+        if FANMATCH_DEBUG:
+            print("=== COLUMNS AFTER read_html ===", flush=True)
+            print(fm_df.columns.tolist(), flush=True)
+            print("=== FIRST 3 ROWS ===", flush=True)
+            print(fm_df.head(3).to_string(), flush=True)
+            if "Prediction" in fm_df.columns:
+                print("=== PREDICTION COLUMN (repr first 5) ===", flush=True)
+                for i, v in enumerate(fm_df["Prediction"].head(5).tolist()):
+                    print(f"  [{i}] {repr(v)}", flush=True)
+            else:
+                print("NO 'Prediction' COLUMN", flush=True)
+                for col in fm_df.columns:
+                    sample = str(fm_df[col].iloc[0]) if len(fm_df) else ""
+                    if "%" in sample or re.search(r"\d+-\d+", sample):
+                        print(f"  Column '{col}' sample: {sample[:100]}", flush=True)
         fm_df.ThrillScore = fm_df.ThrillScore.astype("str")
         fm_df["ThrillScoreRank"] = fm_df.ThrillScore.str[4:]
         fm_df["ThrillScoreRank"] = fm_df["ThrillScoreRank"].str.strip()
@@ -143,8 +200,9 @@ class FanMatch:
         fm_df["Game"] = fm_df.Game.str.replace(r"(\s+[A-Za-z]{2,}-T|NCAA)$", "", regex=True)
 
         pos = fm_df.Game.str.split(r" \[").str[1]
-        fm_df["Game"], fm_df["Possessions"] = fm_df.Game.str.split(r" \[").str[0], pos.astype("str")
-        fm_df.Possessions = fm_df.Possessions.str.split("]").str[0]
+        fm_df["Game"] = fm_df.Game.str.split(r" \[").str[0]
+        # Build Possessions without .str on pos (pos can be float/NaN; .str is strict on dtype)
+        fm_df["Possessions"] = [str(x).split("]")[0] if pd.notna(x) and str(x) != "nan" else "" for x in pos]
         fm_df["PredictedWinner"] = fm_df["Prediction"].str.extract(r"^(.+?) \d+-\d+")[0]
         fm_df["PredictedScore"] = fm_df["Prediction"].str.extract(r" (\d+-\d+)")[0]
         fm_df["WinProbability"] = fm_df["Prediction"].str.extract(r"\((\d+%)\)")[0]

@@ -8,10 +8,33 @@ Paths default to folder containing app/ (backend or bracketiq when copied to db_
 import os
 from pathlib import Path
 
-from pydantic_settings import BaseSettings
-
-# Folder containing app/ (backend or db_update/bracketiq)
+# Load .env before Settings so credentials are available when running from bracketiq
+# (backend .env lives in sibling repo or set DOTENV_PATH)
 _BASE_DIR = Path(__file__).resolve().parent.parent
+
+def _load_env():
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return
+    # 1) Explicit path
+    path = os.environ.get("DOTENV_PATH") or os.environ.get("BACKEND_ENV_PATH")
+    if path and Path(path).exists():
+        load_dotenv(path)
+        return
+    # 2) bracketiq/.env or repo root
+    for d in (_BASE_DIR, _BASE_DIR.parent):
+        if (d / ".env").exists():
+            load_dotenv(d / ".env")
+            return
+    # 3) Sibling: .../website college basketball model/backend/.env
+    sibling = _BASE_DIR.parent.parent / "website college basketball model" / "backend" / ".env"
+    if sibling.exists():
+        load_dotenv(sibling)
+
+_load_env()
+
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):

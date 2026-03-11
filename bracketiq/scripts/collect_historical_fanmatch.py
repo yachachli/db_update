@@ -26,6 +26,8 @@ from app.scrapers.kenpom_scraper import get_kenpom_browser, get_fanmatch_for_dat
 FANMATCH_DELAY_SEC = 10
 FANMATCH_JITTER = (0, 2)
 SEASON_START = datetime(2025, 11, 4)
+# Max dates per run so CI finishes in ~3–4 min when runner has no prior parquet (Pull restores; we backfill over runs).
+MAX_DATES_PER_RUN = 21
 
 
 def _date_range(start: datetime, end: datetime):
@@ -55,7 +57,7 @@ def _write_progress(historical_dir: Path, total_days: int, days_done: int, total
             f.write(f"percent={100.0 * days_done / total_days:.1f}\n")
 
 
-def collect_fanmatch_2026(full_rescrape: bool = False, today_only: bool = False) -> None:
+def collect_fanmatch_2026(full_rescrape: bool = False, today_only: bool = False, refresh_today: bool = False) -> None:
     end = datetime.now(timezone.utc)
     today_str = end.strftime("%Y-%m-%d")
     historical_dir = get_historical_dir()
@@ -83,22 +85,32 @@ def collect_fanmatch_2026(full_rescrape: bool = False, today_only: bool = False)
     days_done = 0
 
     if today_only:
-        if today_str in dates_we_have:
-            print(f"Today ({today_str}) is already in fanmatch_2026.parquet. Nothing to do.")
+        if today_str in dates_we_have and not refresh_today:
+            print(f"Today ({today_str}) is already in fanmatch_2026.parquet. Nothing to do. Use --refresh to re-fetch and replace.")
             return
+        if today_str in dates_we_have and refresh_today:
+            # Drop existing rows for today so we replace with fresh scrape (with fixed PredictedScore/PredictedMOV)
+            date_series = existing_df["fanmatch_date"].astype(str).str[:10]
+            existing_df = existing_df.loc[date_series != today_str].copy()
+            dates_we_have.discard(today_str)
+            print(f"Re-fetching today ({today_str}) and replacing existing rows.")
         dates_to_scrape = [today_str]
         total_days = 1
         print(f"Fetching KenPom FanMatch for today only ({today_str}). One request (~10s).")
     else:
-        start_utc = SEASON_START.replace(tzinfo=timezone.utc) if SEASON_START.tzinfo is None else SEASON_START
         all_dates = list(_date_range(SEASON_START, end))
-        dates_to_scrape = [d for d in all_dates if d not in dates_we_have]
-        total_days = len(dates_to_scrape)
-        if total_days == 0:
+        missing = [d for d in all_dates if d not in dates_we_have]
+        if not missing:
             print("All dates from season start through today are already in fanmatch_2026.parquet. Nothing to do.")
             _write_progress(historical_dir, len(all_dates), len(all_dates), len(existing_df) if existing_df is not None else 0, "end", "done")
             return
-        print(f"Scraping FanMatch: {total_days} new dates (skipping {len(dates_we_have)} already in file). ~10s per date.")
+        if len(missing) > MAX_DATES_PER_RUN:
+            dates_to_scrape = sorted(missing)[-MAX_DATES_PER_RUN:]
+            print(f"Scraping FanMatch: {len(dates_to_scrape)} dates (capped from {len(missing)} missing; run again to backfill). ~10s per date.")
+        else:
+            dates_to_scrape = sorted(missing)
+            print(f"Scraping FanMatch: {len(dates_to_scrape)} new dates (skipping {len(dates_we_have)} already in file). ~10s per date.")
+        total_days = len(dates_to_scrape)
     _write_progress(historical_dir, total_days, 0, 0, "start", "running")
 
     for date_str in dates_to_scrape:
@@ -144,6 +156,9 @@ def collect_fanmatch_2026(full_rescrape: bool = False, today_only: bool = False)
     else:
         consolidated = new_consolidated
         print(f"Saved {len(consolidated)} rows from {days_done} dates.")
+    # Coerce mixed-type columns so PyArrow can write (existing parquet may have float Possessions)
+    if "Possessions" in consolidated.columns:
+        consolidated["Possessions"] = consolidated["Possessions"].astype(str)
     consolidated.to_parquet(out_path, index=False)
     if partial_path.exists():
         partial_path.unlink()
@@ -155,5 +170,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Collect historical FanMatch data (incremental by default)")
     parser.add_argument("--full", action="store_true", help="Re-scrape all dates from season start (ignore existing file)")
     parser.add_argument("--today-only", action="store_true", help="Fetch only today's KenPom FanMatch and merge into parquet (for sanity check)")
+    parser.add_argument("--refresh", action="store_true", help="With --today-only: re-fetch today even if already in parquet (replace that date's rows; use after fixing scraper)")
     args = parser.parse_args()
-    collect_fanmatch_2026(full_rescrape=args.full, today_only=args.today_only)
+    collect_fanmatch_2026(full_rescrape=args.full, today_only=args.today_only, refresh_today=args.refresh)

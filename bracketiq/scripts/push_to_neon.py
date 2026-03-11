@@ -23,6 +23,9 @@ from pathlib import Path
 _BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_BASE))
 
+# Load .env (same as app.config) so NEON_DATABASE_URL/DB_URL are set when run from bracketiq
+import app.config  # noqa: E402
+
 TABLE_PREFIX = "bracketiq_"
 VALID_ONLY = ("kenpom", "slate", "historical", "all")
 
@@ -132,11 +135,11 @@ def _push_fanmatch(engine):
         print(f"  SKIP {TABLE_PREFIX}fanmatch_historical (not found)")
         return
     df = pd.read_parquet(path)
-    keep = ["fanmatch_date", "Game", "PredictedWinner", "PredictedLoser", "PredictedMOV",
+    keep = ["fanmatch_date", "Game", "PredictedWinner", "PredictedLoser", "PredictedMOV", "PredictedScore",
             "Winner", "Loser", "WinnerScore", "LoserScore", "ActualMOV", "Location", "ThrillScore"]
     df = df[[c for c in keep if c in df.columns]]
     renames = {"Game": "game", "PredictedWinner": "predicted_winner", "PredictedLoser": "predicted_loser",
-               "PredictedMOV": "predicted_mov", "Winner": "winner", "Loser": "loser",
+               "PredictedMOV": "predicted_mov", "PredictedScore": "predicted_score", "Winner": "winner", "Loser": "loser",
                "WinnerScore": "winner_score", "LoserScore": "loser_score", "ActualMOV": "actual_mov",
                "Location": "location", "ThrillScore": "thrill_score"}
     df = df.rename(columns={k: v for k, v in renames.items() if k in df.columns})

@@ -44,12 +44,13 @@ jobs:
           KENPOM_PASSWORD: ${{ secrets.KENPOM_PASSWORD }}
         run: python -m scripts.refresh_kenpom_cache
 
-      - name: Collect FanMatch
+      - name: Collect FanMatch (historical, incremental; can take 45+ min first run)
         env:
           KENPOM_EMAIL: ${{ secrets.KENPOM_EMAIL }}
           KENPOM_PASSWORD: ${{ secrets.KENPOM_PASSWORD }}
         run: python -m scripts.collect_historical_fanmatch
         continue-on-error: true
+        timeout-minutes: 30
 
       - name: Collect Odds
         env:
