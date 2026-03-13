@@ -12,8 +12,10 @@ Requires: ODDS_API_KEY in .env, KenPom cache (pomeroy_ratings_*.parquet). Run co
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
@@ -38,6 +40,58 @@ SANITY_TOTAL_TOLERANCE = 8.0    # max |our_total - kp_total| to consider "adjace
 
 # Edge confidence tiers from historical analysis (cover rates by |edge| bucket)
 EDGE_COVER_RATES = {"NO_EDGE": "50.7%", "MILD": "52.8%", "STRONG": "54.3%", "HIGH_CONVICTION": "66.4%"}
+
+
+def _clean_numeric(val) -> float | None:
+    """Aggressively clean a value into a float, handling \\xa0, whitespace, and
+    HTML artefacts that cause pd.read_html to produce NaN."""
+    if val is None:
+        return None
+    if isinstance(val, (int, float)):
+        return None if pd.isna(val) else float(val)
+    s = str(val)
+    s = s.replace("\xa0", " ").replace("\u200b", "").strip()
+    s = re.sub(r"<[^>]+>", "", s).strip()
+    m = re.search(r"[-+]?\d+\.?\d*", s)
+    if m:
+        try:
+            return float(m.group())
+        except ValueError:
+            return None
+    return None
+
+
+def _derive_mov_from_score(score_str: str | None) -> float | None:
+    """Derive MOV from predicted score string when PredictedMOV is NaN.
+    Handles: '78-73', 'Michigan St. 78, UCLA 73', '78 - 73'."""
+    if not score_str or pd.isna(score_str):
+        return None
+    s = str(score_str).replace("\xa0", " ").strip()
+    nums = re.findall(r"\d+", s)
+    if len(nums) >= 2:
+        try:
+            a, b = int(nums[0]), int(nums[1])
+            if 30 < a < 200 and 30 < b < 200:
+                return abs(a - b)
+        except ValueError:
+            pass
+    return None
+
+
+def _derive_total_from_score(score_str: str | None) -> float | None:
+    """Derive predicted total from score string (sum of both scores)."""
+    if not score_str or pd.isna(score_str):
+        return None
+    s = str(score_str).replace("\xa0", " ").strip()
+    nums = re.findall(r"\d+", s)
+    if len(nums) >= 2:
+        try:
+            a, b = int(nums[0]), int(nums[1])
+            if 30 < a < 200 and 30 < b < 200:
+                return float(a + b)
+        except ValueError:
+            pass
+    return None
 
 
 def _normalize_fm_key(name: str) -> str:
@@ -119,7 +173,8 @@ def _load_today_fanmatch() -> list[dict]:
     from app.config import get_historical_dir
     from app.services.schedule_service import parse_fanmatch_game
     from app.services.team_name_resolver import resolve_to_canonical_kenpom
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    eastern_today = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+    utc_today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     hist_dir = get_historical_dir()
     if not hist_dir.is_absolute():
         hist_dir = Path.cwd() / hist_dir
@@ -135,18 +190,21 @@ def _load_today_fanmatch() -> list[dict]:
         return []
     # Normalize date column to YYYY-MM-DD string for comparison
     date_series = df[date_col].astype(str).str[:10]
-    day = df[date_series == today]
+    day = df[date_series == eastern_today]
+    use_date = eastern_today
+    if day.empty and utc_today != eastern_today:
+        day = df[date_series == utc_today]
+        use_date = utc_today
     if day.empty:
-        # Fallback: use most recent date in parquet (KenPom often uses US date; UTC today may have no rows yet)
         unique_dates = sorted(date_series.dropna().unique(), reverse=True)
         if not unique_dates:
             print(f"No fanmatch_date values in parquet.", file=sys.stderr)
             return []
         use_date = str(unique_dates[0])[:10]
         day = df[date_series == use_date]
-        print(f"No FanMatch rows for UTC today ({today}); using latest date in parquet: {use_date} ({len(day)} rows).", file=sys.stderr)
+        print(f"No FanMatch rows for {eastern_today} or {utc_today}; using latest: {use_date} ({len(day)} rows).", file=sys.stderr)
     else:
-        print(f"Using FanMatch for date {today}: {len(day)} rows.", file=sys.stderr)
+        print(f"Using FanMatch for date {use_date}: {len(day)} rows.", file=sys.stderr)
     out = []
     for _, row in day.iterrows():
         game_str = str(row.get(game_col, ""))
@@ -161,7 +219,18 @@ def _load_today_fanmatch() -> list[dict]:
             continue
         home_canon = resolve_to_canonical_kenpom(home)
         away_canon = resolve_to_canonical_kenpom(away)
-        pred_mov = row.get("PredictedMOV") or row.get("predicted_mov")
+        # Score string for fallbacks (try multiple column names)
+        pred_str = None
+        for col_name in ("Prediction", "PredictedScore", "prediction", "predicted_score"):
+            if col_name in row.index:
+                val = row.get(col_name)
+                if val is not None and not pd.isna(val):
+                    pred_str = str(val).strip()
+                    break
+        raw_mov = row.get("PredictedMOV") or row.get("predicted_mov")
+        pred_mov = _clean_numeric(raw_mov)
+        if pred_mov is None and pred_str:
+            pred_mov = _derive_mov_from_score(pred_str)
         pred_winner = (row.get("PredictedWinner") or row.get("predicted_winner") or "").strip()
         if pred_mov is None or pd.isna(pred_mov):
             continue
@@ -172,7 +241,6 @@ def _load_today_fanmatch() -> list[dict]:
         kp_total = None
         kp_score_home = None
         kp_score_away = None
-        pred_str = row.get("Prediction") or row.get("PredictedScore") or row.get("prediction") or row.get("predicted_score")
         if pred_str is not None and not pd.isna(pred_str):
             from app.services.schedule_service import parse_fanmatch_prediction
             parsed_pred = parse_fanmatch_prediction(str(pred_str))
@@ -191,6 +259,9 @@ def _load_today_fanmatch() -> list[dict]:
                     kp_total = winner_s + loser_s
                     kp_score_home = winner_s if home_is_fav else loser_s
                     kp_score_away = loser_s if home_is_fav else winner_s
+        # Last-resort total from score string
+        if kp_total is None and pred_str:
+            kp_total = _derive_total_from_score(pred_str)
         home_norm = _normalize_fm_key(home_canon)
         away_norm = _normalize_fm_key(away_canon)
         out.append({
