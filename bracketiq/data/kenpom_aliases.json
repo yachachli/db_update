@@ -14,64 +14,111 @@
     ],
     "Michigan St.": [
       "Michigan St.",
-      "Michigan State"
+      "Michigan State",
+      "Michigan St",
+      "Michigan State Spartans"
     ],
     "Ohio St.": [
       "Ohio St.",
-      "Ohio State"
+      "Ohio State",
+      "Ohio St",
+      "Ohio State Buckeyes"
     ],
     "Kansas St.": [
       "Kansas St.",
-      "Kansas State"
+      "Kansas State",
+      "Kansas St",
+      "Kansas State Wildcats"
     ],
     "Oklahoma St.": [
       "Oklahoma St.",
-      "Oklahoma State"
+      "Oklahoma State",
+      "Oklahoma St",
+      "Oklahoma State Cowboys"
     ],
     "Iowa St.": [
       "Iowa St.",
-      "Iowa State"
+      "Iowa State",
+      "Iowa St",
+      "Iowa State Cyclones"
     ],
     "Penn St.": [
       "Penn St.",
-      "Penn State"
+      "Penn State",
+      "Penn St",
+      "Penn State Nittany Lions"
     ],
     "Washington St.": [
       "Washington St.",
-      "Washington State"
+      "Washington State",
+      "Washington St",
+      "Washington State Cougars"
     ],
     "Oregon St.": [
       "Oregon St.",
-      "Oregon State"
+      "Oregon State",
+      "Oregon St",
+      "Oregon State Beavers"
     ],
     "Arizona St.": [
       "Arizona St.",
-      "Arizona State"
+      "Arizona State",
+      "Arizona St",
+      "Arizona State Sun Devils"
     ],
     "Florida St.": [
       "Florida St.",
-      "Florida State"
+      "Florida State",
+      "Florida St",
+      "Florida State Seminoles"
     ],
     "Mississippi St.": [
       "Mississippi St.",
-      "Mississippi State"
+      "Mississippi State",
+      "Mississippi St",
+      "Mississippi State Bulldogs"
     ],
     "San Diego St.": [
       "San Diego St.",
-      "San Diego State"
+      "San Diego State",
+      "San Diego St",
+      "San Diego State Aztecs"
     ],
     "Utah St.": [
       "Utah St.",
-      "Utah State"
+      "Utah State",
+      "Utah St",
+      "Utah State Aggies"
     ],
     "New Mexico St.": [
       "New Mexico St.",
-      "New Mexico State"
+      "New Mexico State",
+      "New Mexico St"
     ],
     "Colorado St.": [
       "Colorado St.",
       "Colorado State",
-      "Colorado St Rams"
+      "Colorado St",
+      "Colorado State Rams"
+    ],
+    "Boise St.": [
+      "Boise St.",
+      "Boise State",
+      "Boise St",
+      "Boise State Broncos"
+    ],
+    "Fresno St.": [
+      "Fresno St.",
+      "Fresno State",
+      "Fresno St",
+      "Fresno State Bulldogs",
+      "Fresno St Bulldogs"
+    ],
+    "Wichita St.": [
+      "Wichita St.",
+      "Wichita State",
+      "Wichita St",
+      "Wichita State Shockers"
     ],
     "NC State": [
       "NC State",
@@ -1269,11 +1316,6 @@
     "Kennesaw St.": [
       "Kennesaw St.",
       "Kennesaw State"
-    ],
-    "Fresno St.": [
-      "Fresno St.",
-      "Fresno State",
-      "Fresno St Bulldogs"
     ]
   }
 }

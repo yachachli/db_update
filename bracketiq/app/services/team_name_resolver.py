@@ -78,16 +78,19 @@ def _alias_to_canonical() -> dict[str, str]:
 def resolve_to_canonical_kenpom(any_name: str) -> str:
     """
     Given any team name (Odds API or KenPom variant like Tenn-Martin), return canonical KenPom name.
-    Use for consistent matching in build_ats_dataset and elsewhere.
+    Explicit mapping (team_name_mapping.json via odds_to_kenpom_name) is tried first so State-school
+    names (e.g. Utah State Aggies -> Utah St.) resolve before any alias/normalization.
     """
     s = (any_name or "").strip()
     if not s:
         return s
+    from app.scrapers.odds_scraper import odds_to_kenpom_name
+    from_odds = (odds_to_kenpom_name(s) or s).strip()
+    if from_odds != s:
+        return from_odds
     alias_map = _alias_to_canonical()
     if s.lower() in alias_map:
         return alias_map[s.lower()]
-    from app.scrapers.odds_scraper import odds_to_kenpom_name
-    from_odds = (odds_to_kenpom_name(s) or s).strip()
     if from_odds.lower() in alias_map:
         return alias_map[from_odds.lower()]
     return from_odds
