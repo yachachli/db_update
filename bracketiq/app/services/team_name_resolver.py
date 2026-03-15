@@ -134,12 +134,17 @@ def resolve_odds_to_kenpom_verified(
 ) -> Optional[str]:
     """
     Resolve Odds API name to KenPom name and verify it exists in the Pomeroy cache.
-    Returns None if unresolved or not found in cache (caller should skip the game).
+    Tries team_name_mapping.json first; if no hit, tries alias map (resolve_to_canonical_kenpom)
+    so Odds API variants (e.g. "Wichita St Shockers") still resolve. Returns None if unresolved
+    or not found in cache (caller should skip the game).
     """
     from app.scrapers.odds_scraper import odds_to_kenpom_name
     resolved = (odds_to_kenpom_name(odds_name or "") or "").strip()
     if not resolved:
         return None
+    # If mapping didn't change the name, try alias map so variants (e.g. "X St Mascots") still resolve
+    if resolved == (odds_name or "").strip():
+        resolved = (resolve_to_canonical_kenpom(odds_name or "") or "").strip() or resolved
     if pomeroy_df is None or pomeroy_df.empty:
         return resolved
     row = find_team_row(pomeroy_df, resolved)
