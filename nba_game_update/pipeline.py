@@ -30,17 +30,28 @@ UPSERT_SQL = text("""
 def fetch_and_upsert_games(engine, client: Tank01Client, date_str: str) -> int:
     """Fetch games for a specific date and upsert them. Returns count of games upserted."""
     raw_games = client.get_scores_for_date(date_str)
-    records = [parse_game(g, fallback_date=date_str) for g in (raw_games or [])]
+    
+    if not raw_games:
+        print(f"  {date_str}: 0 games found (API returned empty)")
+        return 0
+    
+    records = [parse_game(g, fallback_date=date_str) for g in raw_games]
     records = [r for r in records if r is not None]
+    
+    if not records:
+        print(f"  {date_str}: 0 games parsed (raw games: {len(raw_games)}, parsed: 0)")
+        return 0
 
-    if records:
+    try:
         with engine.begin() as conn:
             for rec in records:
                 conn.execute(UPSERT_SQL, rec)
-        print(f"  {date_str}: {len(records)} games upserted")
+        print(f"  {date_str}: {len(records)} games upserted into nba_game_results")
         return len(records)
-    else:
-        print(f"  {date_str}: 0 games found")
+    except Exception as e:
+        print(f"  ERROR upserting {date_str}: {e}")
+        import traceback
+        traceback.print_exc()
         return 0
 
 

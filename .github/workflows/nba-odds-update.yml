@@ -2,8 +2,9 @@ name: NBA Odds Update
 
 on:
   schedule:
-    # 4:00 PM ET = 9:00 PM UTC (before evening games start)
-    - cron: "0 21 * * *"
+    # 2:00 AM Pacific Standard Time / 10:00 UTC.
+    # This will run at 3:00 AM Pacific Daylight Time in summer.
+    - cron: "0 10 * * *"
   workflow_dispatch:
 
 jobs:
