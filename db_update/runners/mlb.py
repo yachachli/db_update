@@ -19,6 +19,9 @@ from db_update.utils import (
 
 
 async def run(pool: DBPool):
+    # RapidAPI throttles this MLB dataset aggressively, so keep fan-out conservative.
+    api_batch_size = 5
+
     logger.info("Fetching MLB teams and players")
     async with AsyncCachingClient(timeout=30) as client:
         teams, players_raw = await asyncio.gather(
@@ -65,6 +68,7 @@ async def run(pool: DBPool):
                 mlb_api.get_mlb_player_info(client, player.playerID)
                 for player in players
             ),
+            batch_size=api_batch_size,
         )
     logger.info(f"Fetched {len(players_details)} player info")
 
@@ -102,6 +106,7 @@ async def run(pool: DBPool):
                 mlb_api.get_mlb_games_for_player(client, player.player_id)
                 for player in players_details
             ),
+            batch_size=api_batch_size,
         )
     logger.info(f"Fetched {len(games_stats_list)} game stats")
 

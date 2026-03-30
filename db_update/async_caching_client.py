@@ -1,3 +1,5 @@
+import asyncio
+import random
 import ssl
 import types
 import typing
@@ -25,6 +27,7 @@ from httpx._types import (
 from httpx._urls import URL
 
 from db_update.env import Env
+from db_update.logger import logger
 
 T = typing.TypeVar("T")
 U = typing.TypeVar("U", bound="AsyncCachingClient")
@@ -106,6 +109,122 @@ class AsyncCachingClient:
         timeout: TimeoutTypes | UseClientDefault = USE_CLIENT_DEFAULT,
         extensions: RequestExtensions | None = None,
     ) -> T:
+        async def request_with_retries() -> httpx.Response:
+            last_exc: Exception | None = None
+
+            for attempt in range(1, 7):
+                try:
+                    response = await self._client.get(
+                        url,
+                        params=params,
+                        headers=headers,
+                        cookies=cookies,
+                        auth=auth,
+                        follow_redirects=follow_redirects,
+                        timeout=timeout,
+                        extensions=extensions,
+                    )
+                except httpx.HTTPError as exc:
+                    last_exc = exc
+                    wait_s = min(2**attempt, 10) + random.uniform(0, 0.25)
+                    logger.warning(
+                        f"HTTP error fetching {url}: {exc}. Retrying in {wait_s:.2f}s "
+                        f"(attempt {attempt}/6)"
+                    )
+                    if attempt >= 6:
+                        break
+                    await asyncio.sleep(wait_s)
+                    continue
+
+                if response.status_code == 429:
+                    retry_after = response.headers.get("Retry-After")
+                    try:
+                        wait_s = (
+                            float(retry_after)
+                            if retry_after is not None
+                            else min(2**attempt, 30)
+                        )
+                    except ValueError:
+                        wait_s = min(2**attempt, 30)
+                    wait_s += random.uniform(0, 0.25)
+
+                    quota_info = ""
+                    remaining = (
+                        response.headers.get("x-ratelimit-requests-remaining")
+                        or response.headers.get("X-RateLimit-Remaining")
+                    )
+                    limit = (
+                        response.headers.get("x-ratelimit-requests-limit")
+                        or response.headers.get("X-RateLimit-Limit")
+                    )
+                    if remaining or limit:
+                        quota_info = f" (remaining: {remaining or 'unknown'} / {limit or 'unknown'})"
+
+                    logger.warning(
+                        f"429 Too Many Requests from {url}{quota_info}. "
+                        f"Retrying in {wait_s:.2f}s (attempt {attempt}/6)"
+                    )
+                    last_exc = httpx.HTTPStatusError(
+                        f"429 Too Many Requests after {attempt} attempts{quota_info}",
+                        request=response.request,
+                        response=response,
+                    )
+                    if attempt >= 6:
+                        break
+                    await asyncio.sleep(wait_s)
+                    continue
+
+                if response.status_code == 403:
+                    quota_info = ""
+                    remaining = (
+                        response.headers.get("x-ratelimit-requests-remaining")
+                        or response.headers.get("X-RateLimit-Remaining")
+                    )
+                    limit = (
+                        response.headers.get("x-ratelimit-requests-limit")
+                        or response.headers.get("X-RateLimit-Limit")
+                    )
+                    if remaining or limit:
+                        quota_info = f" (remaining: {remaining or 'unknown'} / {limit or 'unknown'})"
+
+                    wait_s = min(30 * attempt, 180) + random.uniform(0, 1)
+                    logger.warning(
+                        f"403 Forbidden from {url}{quota_info}. "
+                        f"Retrying in {wait_s:.2f}s (attempt {attempt}/6)"
+                    )
+                    last_exc = httpx.HTTPStatusError(
+                        "403 Forbidden after repeated attempts. This may indicate quota "
+                        "exhaustion or a RapidAPI subscription issue.",
+                        request=response.request,
+                        response=response,
+                    )
+                    if attempt >= 6:
+                        break
+                    await asyncio.sleep(wait_s)
+                    continue
+
+                if 500 <= response.status_code < 600:
+                    wait_s = min(2**attempt, 20) + random.uniform(0, 0.25)
+                    logger.warning(
+                        f"{response.status_code} from {url}. Retrying in {wait_s:.2f}s "
+                        f"(attempt {attempt}/6)"
+                    )
+                    last_exc = httpx.HTTPStatusError(
+                        f"{response.status_code} server error after {attempt} attempts",
+                        request=response.request,
+                        response=response,
+                    )
+                    if attempt >= 6:
+                        break
+                    await asyncio.sleep(wait_s)
+                    continue
+
+                response.raise_for_status()
+                return response
+
+            assert last_exc is not None
+            raise last_exc
+
         if Env.API_CACHE_DIR is not None:
             from pathlib import Path
             from urllib.parse import urlparse
@@ -127,17 +246,7 @@ class AsyncCachingClient:
                     data = msgspec.json.decode(await f.read(), type=ty)
                     return data
             except Exception:
-                response = await self._client.get(
-                    url,
-                    params=params,
-                    headers=headers,
-                    cookies=cookies,
-                    auth=auth,
-                    follow_redirects=follow_redirects,
-                    timeout=timeout,
-                    extensions=extensions,
-                )
-                response.raise_for_status()
+                response = await request_with_retries()
 
                 cache_path.mkdir(parents=True, exist_ok=True)
 
@@ -150,17 +259,7 @@ class AsyncCachingClient:
 
         assert Env.API_CACHE_DIR is None
 
-        response = await self._client.get(
-            url,
-            params=params,
-            headers=headers,
-            cookies=cookies,
-            auth=auth,
-            follow_redirects=follow_redirects,
-            timeout=timeout,
-            extensions=extensions,
-        )
-        response.raise_for_status()
+        response = await request_with_retries()
         data = msgspec.json.decode(response.content, type=ty)
         # data = response.json()
         return data
