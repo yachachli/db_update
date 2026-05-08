@@ -95,7 +95,7 @@ class Fgm(msgspec.Struct, frozen=True):
 
 
 class CurrentStreak(msgspec.Struct, frozen=True):
-    length: int
+    length: int | str
     result: str
 
 
