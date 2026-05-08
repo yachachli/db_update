@@ -141,15 +141,15 @@ class DefensiveStats(msgspec.Struct, frozen=True):
 
 class WnbaTeam(msgspec.Struct, frozen=True):
     conference: str
-    loss: str
-    oppg: str
-    ppg: str
-    wins: str
-    conference_abv: str = msgspec.field(name="conferenceAbv")
-    current_streak: CurrentStreak = msgspec.field(name="currentStreak")
-    defensive_stats: DefensiveStats = msgspec.field(name="defensiveStats")
-    espn_logo_1: str = msgspec.field(name="espnLogo1")
-    offensive_stats: OffensiveStats = msgspec.field(name="offensiveStats")
+    loss: str = "0"
+    oppg: str = "0"
+    ppg: str = "0"
+    wins: str = "0"
+    conference_abv: str = msgspec.field(name="conferenceAbv", default="")
+    current_streak: CurrentStreak | None = msgspec.field(name="currentStreak", default=None)
+    defensive_stats: DefensiveStats | None = msgspec.field(name="defensiveStats", default=None)
+    espn_logo_1: str = msgspec.field(name="espnLogo1", default="")
+    offensive_stats: OffensiveStats | None = msgspec.field(name="offensiveStats", default=None)
     team_abv: str = msgspec.field(name="teamAbv")
     team_city: str = msgspec.field(name="teamCity")
     team_id: str = msgspec.field(name="teamID")
