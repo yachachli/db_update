@@ -51,14 +51,13 @@ ON CONFLICT (team_abv) DO UPDATE SET
 
 
 -- name: WnbaPlayerUpsert :exec
-INSERT INTO wnba_players (name, position, team_id, player_id)
-VALUES ($1, $2, $3, $4)
+INSERT INTO wnba_players (name, position, team_id, player_id, player_pic)
+VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (player_id) DO UPDATE SET
     name       = EXCLUDED.name,
     position   = EXCLUDED.position,
     team_id    = EXCLUDED.team_id,
-    player_pic = EXCLUDED.player_pic,
-    injury     = EXCLUDED.injury;
+    player_pic = EXCLUDED.player_pic;
 
 -- name: WnbaSeasonId :one
 SELECT id FROM wnba_seasons WHERE season_year = $1;

@@ -193,14 +193,13 @@ ON CONFLICT (player_id, season_id) DO UPDATE SET
 """
 
 WNBA_PLAYER_UPSERT: typing.Final[str] = """-- name: WnbaPlayerUpsert :exec
-INSERT INTO wnba_players (name, position, team_id, player_id)
-VALUES ($1, $2, $3, $4)
+INSERT INTO wnba_players (name, position, team_id, player_id, player_pic)
+VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (player_id) DO UPDATE SET
     name       = EXCLUDED.name,
     position   = EXCLUDED.position,
     team_id    = EXCLUDED.team_id,
-    player_pic = EXCLUDED.player_pic,
-    injury     = EXCLUDED.injury
+    player_pic = EXCLUDED.player_pic
 """
 
 WNBA_SEASON_ID: typing.Final[str] = """-- name: WnbaSeasonId :one
@@ -379,9 +378,9 @@ async def wnba_player_season_stats_upsert(
 
 
 async def wnba_player_upsert(
-    conn: ConnectionLike, *, name: str, position: str, team_id: int, player_id: int
+    conn: ConnectionLike, *, name: str, position: str, team_id: int, player_id: int, player_pic: str | None = None
 ) -> None:
-    await conn.execute(WNBA_PLAYER_UPSERT, name, position, team_id, player_id)
+    await conn.execute(WNBA_PLAYER_UPSERT, name, position, team_id, player_id, player_pic)
 
 
 async def wnba_season_id(conn: ConnectionLike, *, season_year: str) -> int | None:

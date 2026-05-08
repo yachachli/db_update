@@ -87,6 +87,7 @@ async def run(pool: DBPool):
                 position=player.pos,
                 team_id=int_safe(player.team_id),
                 player_id=int_safe(player.player_id),
+                player_pic=player.espn_headshot or None,
             )
             for player in unique_players
         ),
@@ -155,7 +156,7 @@ async def run(pool: DBPool):
             assists=int_safe(gs.ast),
             steals=int_safe(gs.stl),
             blocks=int_safe(gs.blk),
-            turnovers=int_safe(gs.blk),
+            turnovers=int_safe(gs.tov),
             offensive_rebounds=int_safe(gs.off_reb),
             defensive_rebounds=int_safe(gs.def_reb),
             free_throw_percentage=decimal_safe(gs.ftp),
