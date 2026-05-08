@@ -5,9 +5,9 @@ from db_update.env import Env
 
 
 class Injury(msgspec.Struct, frozen=True):
-    description: str
-    designation: str
-    inj_return_date: str = msgspec.field(name="injReturnDate")
+    description: str = ""
+    designation: str = ""
+    inj_return_date: str = msgspec.field(name="injReturnDate", default="")
 
 
 class Reb(msgspec.Struct, frozen=True):
@@ -240,20 +240,20 @@ class Stats(msgspec.Struct, frozen=True):
 
 
 class WnbaPlayerInfo(msgspec.Struct, frozen=True, kw_only=True):
-    exp: str
-    injury: Injury
-    pos: str
-    school: str
-    stats: Stats
-    team: str
-    espn_headshot: str = msgspec.field(name="espnHeadshot")
-    espn_id: str = msgspec.field(name="espnID")
-    espn_link: str = msgspec.field(name="espnLink")
-    espn_name: str = msgspec.field(name="espnName")
+    pos: str = ""
+    team: str = ""
+    exp: str = ""
+    school: str = ""
+    injury: Injury | None = None
+    stats: Stats | None = None
+    espn_headshot: str = msgspec.field(name="espnHeadshot", default="")
+    espn_id: str = msgspec.field(name="espnID", default="")
+    espn_link: str = msgspec.field(name="espnLink", default="")
+    espn_name: str = msgspec.field(name="espnName", default="")
     jersey_num: str | None = msgspec.field(name="jerseyNum", default=None)
-    long_name: str = msgspec.field(name="longName")
-    player_id: str = msgspec.field(name="playerID")
-    team_id: str = msgspec.field(name="teamID")
+    long_name: str = msgspec.field(name="longName", default="")
+    player_id: str = msgspec.field(name="playerID", default="")
+    team_id: str = msgspec.field(name="teamID", default="")
     age: str | None = msgspec.field(name="age", default=None)
     height: str | None = msgspec.field(name="height", default=None)
     weight: str | None = msgspec.field(name="weight", default=None)

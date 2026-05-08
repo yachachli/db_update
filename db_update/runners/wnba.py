@@ -93,7 +93,8 @@ async def run(pool: DBPool):
         ),
     )
 
-    logger.info(f"Upserting WNBA {len(players_details)} players season stats")
+    players_with_stats = [p for p in unique_players if p.stats is not None]
+    logger.info(f"Upserting WNBA {len(players_with_stats)} players season stats")
     await batch_db(
         pool,
         [
@@ -121,7 +122,7 @@ async def run(pool: DBPool):
                 free_throws_made_per_game=decimal_safe(player.stats.ftm),
                 free_throws_attempted_per_game=decimal_safe(player.stats.fta),
             )
-            for player in unique_players
+            for player in players_with_stats
         ],
     )
 
