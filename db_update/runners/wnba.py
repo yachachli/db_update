@@ -51,6 +51,12 @@ async def run(pool: DBPool):
         ),
     )
 
+    # Build mapping from team_abv -> DB id
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("SELECT id, team_abv FROM wnba_teams")
+    team_abv_to_db_id: dict[str, int] = {r["team_abv"]: r["id"] for r in rows}
+    logger.info(f"Team ABV to DB ID mapping: {len(team_abv_to_db_id)} teams")
+
     logger.info("Fetching WNBA player info")
     async with AsyncCachingClient(timeout=60) as client:
         players_details = await batch(
@@ -64,14 +70,14 @@ async def run(pool: DBPool):
     logger.info(f"Upserting WNBA {len(players_details)} players")
     valid_players = [
         p for p in players_details
-        if (_tid := int_safe(p.team_id)) != 0
+        if p.team and p.team in team_abv_to_db_id
     ]
     logger.info(f"Upserting {len(valid_players)} valid players")
 
-    seen: set[tuple[str,int]] = set()
+    seen: set[tuple[str, str]] = set()
     unique_players: list[type(players_details[0])] = [] # type: ignore
     for p in valid_players:
-        key = (p.long_name, int_safe(p.team_id))
+        key = (p.long_name, p.team)
         if key in seen:
             continue
         seen.add(key)
@@ -85,7 +91,7 @@ async def run(pool: DBPool):
                 db.wnba_player_upsert,
                 name=player.long_name,
                 position=player.pos,
-                team_id=int_safe(player.team_id),
+                team_id=team_abv_to_db_id[player.team],
                 player_id=int_safe(player.player_id),
                 player_pic=player.espn_headshot or None,
             )
@@ -131,7 +137,7 @@ async def run(pool: DBPool):
         games_stats_list = await batch(
             (
                 wnba_api.get_wnba_games_for_player(client, player.player_id)
-                for player in players_details
+                for player in unique_players
             ),
         )
     logger.info(f"Fetched {len(games_stats_list)} game stats")
@@ -141,6 +147,10 @@ async def run(pool: DBPool):
     async def wnba_player_game_stats_upsert(
         conn: DBConnection, game_id: str, gs: wnba_api.WnbaGame
     ):
+        db_team_id = team_abv_to_db_id.get(gs.team_abv)
+        if db_team_id is None:
+            return
+
         date_string, teams_string = game_id.split("_")
         game_date = datetime.strptime(date_string, "%Y%m%d").date()
         away, home = teams_string.split("@")
@@ -150,7 +160,7 @@ async def run(pool: DBPool):
             conn,
             player_id=int(gs.player_id),
             game_id=game_id,
-            team_id=int_safe(gs.team_id),
+            team_id=db_team_id,
             minutes_played=decimal_safe(gs.mins),
             points=int_safe(gs.pts),
             rebounds=int_safe(gs.reb),

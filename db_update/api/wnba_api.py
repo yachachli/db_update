@@ -317,7 +317,7 @@ class WnbaGame(msgspec.Struct, frozen=True):
 
 
 class WnbaGamesForPlayerResponse(msgspec.Struct, frozen=True):
-    body: dict[str, WnbaGame]
+    body: dict[str, WnbaGame] | None = None
     status_code: int = msgspec.field(name="statusCode")
 
 
@@ -339,4 +339,4 @@ async def get_wnba_games_for_player(
             "x-rapidapi-key": Env.WNBA_API_KEY,
         },
     )
-    return data.body
+    return data.body or {}
