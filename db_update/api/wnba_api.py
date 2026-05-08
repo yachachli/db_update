@@ -316,7 +316,7 @@ class WnbaGame(msgspec.Struct, frozen=True):
     team_id: str = msgspec.field(name="teamID")
 
 
-class WnbaGamesForPlayerResponse(msgspec.Struct, frozen=True):
+class WnbaGamesForPlayerResponse(msgspec.Struct, frozen=True, kw_only=True):
     body: dict[str, WnbaGame] | None = None
     status_code: int = msgspec.field(name="statusCode")
 
