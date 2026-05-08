@@ -139,7 +139,7 @@ class DefensiveStats(msgspec.Struct, frozen=True):
     team_id: str = msgspec.field(name="teamID")
 
 
-class WnbaTeam(msgspec.Struct, frozen=True):
+class WnbaTeam(msgspec.Struct, frozen=True, kw_only=True):
     conference: str
     loss: str = "0"
     oppg: str = "0"
