@@ -2,8 +2,8 @@ name: Daily MLB DB Update
 
 on:
   schedule:
-    # 1 AM Pacific / 13 UTC
-    - cron: "0 10 * * *"
+    # 11:30 UTC (4:30 AM PDT / 7:30 AM EDT) - gives late West Coast games + upstream box-score lag more time to land before daily bets at 14:00 UTC
+    - cron: "30 11 * * *"
   workflow_dispatch:
 
 jobs:
