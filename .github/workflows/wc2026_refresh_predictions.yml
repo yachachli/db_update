@@ -1,0 +1,36 @@
+# WC 2026: daily prediction refresh for fixtures in the next 3 days.
+# Runs after fixture fetch (06:00 UTC); scheduled at 10:00 UTC.
+name: WC 2026 Refresh Predictions
+
+on:
+  schedule:
+    - cron: '0 10 * * *'
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: wc2026
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Ensure cache directory exists
+        run: mkdir -p data/cache
+
+      - name: Refresh predictions
+        env:
+          NEON_DATABASE_URL: ${{ secrets.DB_URL }}
+          SPORTMONKS_API_KEY: ${{ secrets.SPORTMONKS_API_KEY }}
+        run: python scripts/cron_refresh_predictions.py

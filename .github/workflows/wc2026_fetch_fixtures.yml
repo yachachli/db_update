@@ -1,0 +1,36 @@
+# WC 2026: daily fixture sync from SportMonks → Neon (wc2026_fixtures table).
+# Repo secret DB_URL maps to NEON_DATABASE_URL at runtime (see wc2026/src/config.py).
+name: WC 2026 Fetch Fixtures
+
+on:
+  schedule:
+    - cron: '0 6 * * *'  # daily 06:00 UTC
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: wc2026
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Ensure cache directory exists
+        run: mkdir -p data/cache
+
+      - name: Fetch WC 2026 fixtures
+        env:
+          NEON_DATABASE_URL: ${{ secrets.DB_URL }}
+          SPORTMONKS_API_KEY: ${{ secrets.SPORTMONKS_API_KEY }}
+        run: python scripts/cron_fetch_fixtures.py

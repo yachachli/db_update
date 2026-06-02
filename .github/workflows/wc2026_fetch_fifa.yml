@@ -1,0 +1,31 @@
+# WC 2026: weekly FIFA rankings sync → Neon (fifa_rankings table).
+name: WC 2026 Fetch FIFA Rankings
+
+on:
+  schedule:
+    - cron: '0 8 * * 1'  # Mondays 08:00 UTC
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: wc2026
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Fetch FIFA rankings
+        env:
+          NEON_DATABASE_URL: ${{ secrets.DB_URL }}
+        run: python scripts/cron_fetch_fifa.py

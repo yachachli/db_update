@@ -1,0 +1,254 @@
+{
+  "_comment": "48-team field for the 2026 World Cup. sportmonks_team_id is populated by the bootstrap on first run (then reused). search_name uses the form most likely to hit SportMonks /teams/search (e.g. 'United States' not 'USA', 'Cote' for Cote d'Ivoire). Entries marked tentative=true are best-guess qualifiers (playoff/borderline) as of mid-2026 and should be updated as qualification finalizes.",
+  "teams": [
+    {
+      "sportmonks_team_id": 18571,
+      "search_name": "United States",
+      "confederation": "CONCACAF"
+    },
+    {
+      "sportmonks_team_id": 18572,
+      "search_name": "Canada",
+      "confederation": "CONCACAF"
+    },
+    {
+      "sportmonks_team_id": 18576,
+      "search_name": "Mexico",
+      "confederation": "CONCACAF"
+    },
+    {
+      "sportmonks_team_id": 18717,
+      "search_name": "Panama",
+      "confederation": "CONCACAF"
+    },
+    {
+      "sportmonks_team_id": 18598,
+      "search_name": "Costa Rica",
+      "confederation": "CONCACAF"
+    },
+    {
+      "sportmonks_team_id": 18574,
+      "search_name": "Honduras",
+      "confederation": "CONCACAF",
+      "tentative": true
+    },
+    {
+      "sportmonks_team_id": 18647,
+      "search_name": "France",
+      "confederation": "UEFA"
+    },
+    {
+      "sportmonks_team_id": 18645,
+      "search_name": "England",
+      "confederation": "UEFA"
+    },
+    {
+      "sportmonks_team_id": 18710,
+      "search_name": "Spain",
+      "confederation": "UEFA"
+    },
+    {
+      "sportmonks_team_id": 18701,
+      "search_name": "Portugal",
+      "confederation": "UEFA"
+    },
+    {
+      "sportmonks_team_id": 18743,
+      "search_name": "Belgium",
+      "confederation": "UEFA"
+    },
+    {
+      "sportmonks_team_id": 18694,
+      "search_name": "Netherlands",
+      "confederation": "UEFA"
+    },
+    {
+      "sportmonks_team_id": 18660,
+      "search_name": "Germany",
+      "confederation": "UEFA"
+    },
+    {
+      "sportmonks_team_id": 18588,
+      "search_name": "Croatia",
+      "confederation": "UEFA"
+    },
+    {
+      "sportmonks_team_id": 18708,
+      "search_name": "Switzerland",
+      "confederation": "UEFA"
+    },
+    {
+      "sportmonks_team_id": 18643,
+      "search_name": "Austria",
+      "confederation": "UEFA"
+    },
+    {
+      "sportmonks_team_id": 18583,
+      "search_name": "Denmark",
+      "confederation": "UEFA"
+    },
+    {
+      "sportmonks_team_id": 18716,
+      "search_name": "Türkiye",
+      "confederation": "UEFA"
+    },
+    {
+      "sportmonks_team_id": 18578,
+      "search_name": "Norway",
+      "confederation": "UEFA"
+    },
+    {
+      "sportmonks_team_id": 18658,
+      "search_name": "Italy",
+      "confederation": "UEFA",
+      "tentative": true
+    },
+    {
+      "sportmonks_team_id": 18699,
+      "search_name": "Poland",
+      "confederation": "UEFA",
+      "tentative": true
+    },
+    {
+      "sportmonks_team_id": 18873,
+      "search_name": "Serbia",
+      "confederation": "UEFA",
+      "tentative": true
+    },
+    {
+      "sportmonks_team_id": 18644,
+      "search_name": "Argentina",
+      "confederation": "CONMEBOL"
+    },
+    {
+      "sportmonks_team_id": 18704,
+      "search_name": "Brazil",
+      "confederation": "CONMEBOL"
+    },
+    {
+      "sportmonks_team_id": 15251,
+      "search_name": "Uruguay",
+      "confederation": "CONMEBOL"
+    },
+    {
+      "sportmonks_team_id": 18720,
+      "search_name": "Colombia",
+      "confederation": "CONMEBOL"
+    },
+    {
+      "sportmonks_team_id": 18573,
+      "search_name": "Ecuador",
+      "confederation": "CONMEBOL"
+    },
+    {
+      "sportmonks_team_id": 18723,
+      "search_name": "Paraguay",
+      "confederation": "CONMEBOL"
+    },
+    {
+      "sportmonks_team_id": 18551,
+      "search_name": "Morocco",
+      "confederation": "CAF"
+    },
+    {
+      "sportmonks_team_id": 18558,
+      "search_name": "Senegal",
+      "confederation": "CAF"
+    },
+    {
+      "sportmonks_team_id": 18546,
+      "search_name": "Egypt",
+      "confederation": "CAF"
+    },
+    {
+      "sportmonks_team_id": 18620,
+      "search_name": "Algeria",
+      "confederation": "CAF"
+    },
+    {
+      "sportmonks_team_id": 18554,
+      "search_name": "Tunisia",
+      "confederation": "CAF"
+    },
+    {
+      "sportmonks_team_id": 18780,
+      "search_name": "Cameroon",
+      "confederation": "CAF"
+    },
+    {
+      "sportmonks_team_id": 18560,
+      "search_name": "Cote",
+      "confederation": "CAF"
+    },
+    {
+      "sportmonks_team_id": 18737,
+      "search_name": "Nigeria",
+      "confederation": "CAF",
+      "tentative": true
+    },
+    {
+      "sportmonks_team_id": 18553,
+      "search_name": "Ghana",
+      "confederation": "CAF",
+      "tentative": true
+    },
+    {
+      "sportmonks_team_id": 18597,
+      "search_name": "Japan",
+      "confederation": "AFC"
+    },
+    {
+      "sportmonks_team_id": 18567,
+      "search_name": "Korea Republic",
+      "confederation": "AFC"
+    },
+    {
+      "sportmonks_team_id": 18652,
+      "search_name": "Iran",
+      "confederation": "AFC"
+    },
+    {
+      "sportmonks_team_id": 18730,
+      "search_name": "Australia",
+      "confederation": "AFC"
+    },
+    {
+      "sportmonks_team_id": 18562,
+      "search_name": "Saudi Arabia",
+      "confederation": "AFC"
+    },
+    {
+      "sportmonks_team_id": 18544,
+      "search_name": "Qatar",
+      "confederation": "AFC"
+    },
+    {
+      "sportmonks_team_id": 18745,
+      "search_name": "Uzbekistan",
+      "confederation": "AFC"
+    },
+    {
+      "sportmonks_team_id": 18600,
+      "search_name": "Iraq",
+      "confederation": "AFC",
+      "tentative": true
+    },
+    {
+      "sportmonks_team_id": 18613,
+      "search_name": "New Zealand",
+      "confederation": "OFC"
+    },
+    {
+      "sportmonks_team_id": 18825,
+      "search_name": "Bolivia",
+      "confederation": "CONMEBOL",
+      "tentative": true
+    },
+    {
+      "sportmonks_team_id": 18771,
+      "search_name": "Jamaica",
+      "confederation": "CONCACAF",
+      "tentative": true
+    }
+  ]
+}

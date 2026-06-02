@@ -1,0 +1,10 @@
+{
+  "_comment": "Manual mappings for SportMonks teams whose country.fifa_name does not match FIFA's country_code. Keys are SportMonks team_id (as string). Add entries here when the auto-cascade fails. The loader reads only the 'overrides' object; '_comment' and '_example' are ignored.",
+  "_example": {
+    "12345": {
+      "fifa_country_code": "ABC",
+      "reason": "SportMonks lists fifa_name as 'XYZ' but FIFA uses 'ABC'"
+    }
+  },
+  "overrides": {}
+}

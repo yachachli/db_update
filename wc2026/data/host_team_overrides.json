@@ -1,0 +1,29 @@
+{
+  "_comment": "Hardcoded base attack/defense ratings for the 3 WC 2026 host nations. These nations don't play WC qualifiers and have no recent competitive stats data on our SportMonks plan. Values are research-backed approximations (see README 'Host Nation Approach' section). The standard HOST_BONUS multiplier from config.py applies on top of these values via the normal pipeline logic. Updated: 2026-06-01.",
+  "hosts": {
+    "United States": {
+      "search_name": "United States",
+      "confederation": "CONCACAF",
+      "attack_base": 1.02,
+      "defense_base": 0.98,
+      "reasoning": "FIFA #14. Talented roster (Pulisic, Adams, McKennie, Balogun) but inconsistent — Gold Cup 2025 final loss to Mexico, Copa América 2024 group exit. Roughly average WC team.",
+      "form_summary": "Lost 2025 Gold Cup final to Mexico 1-2. Group stage exit Copa America 2024. 4th place CONCACAF Nations League 2024-25."
+    },
+    "Mexico": {
+      "search_name": "Mexico",
+      "confederation": "CONCACAF",
+      "attack_base": 1.08,
+      "defense_base": 0.92,
+      "reasoning": "FIFA #15. Strongest of the three hosts. Won 2024-25 CONCACAF Nations League AND 2025 Gold Cup. Jimenez in form, defensive solidity their strength.",
+      "form_summary": "Won 2025 Gold Cup beating USA 2-1 in final. Won 2024-25 Nations League. Drew Portugal and Belgium March 2026 friendlies."
+    },
+    "Canada": {
+      "search_name": "Canada",
+      "confederation": "CONCACAF",
+      "attack_base": 0.92,
+      "defense_base": 1.05,
+      "reasoning": "FIFA #28-30. Historic high under Marsch. Reached Copa América 2024 semifinals (4th). Jonathan David, Davies. Step below USA/Mexico in established quality.",
+      "form_summary": "4th place Copa América 2024. Lost to Mexico in 2025 Nations League semifinal. Highest-ever FIFA ranking achieved 2025."
+    }
+  }
+}

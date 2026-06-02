@@ -1,0 +1,7 @@
+requests
+python-dotenv
+numpy
+scipy
+pandas
+pytest
+psycopg[binary]>=3.1
