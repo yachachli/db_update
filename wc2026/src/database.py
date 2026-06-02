@@ -11,6 +11,7 @@ import logging
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Generator
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import psycopg
 from psycopg.rows import dict_row
@@ -43,13 +44,22 @@ class DatabaseError(RuntimeError):
     """Raised when the database is unavailable or a query fails."""
 
 
+def _normalize_db_url(url: str) -> str:
+    """Strip query params that break psycopg on GitHub Actions (e.g. channel_binding)."""
+    parsed = urlparse(url)
+    if not parsed.query:
+        return url
+    filtered = [(k, v) for k, v in parse_qsl(parsed.query) if k != "channel_binding"]
+    return urlunparse(parsed._replace(query=urlencode(filtered)))
+
+
 def _require_url() -> str:
     if not NEON_DATABASE_URL:
         raise DatabaseError(
             "NEON_DATABASE_URL is not set. Add it to your .env file "
             "(see .env.example)."
         )
-    return NEON_DATABASE_URL
+    return _normalize_db_url(NEON_DATABASE_URL)
 
 
 @contextmanager

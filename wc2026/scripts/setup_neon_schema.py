@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import psycopg  # noqa: E402
 
 from src.config import NEON_DATABASE_URL  # noqa: E402
+from src.database import _require_url  # noqa: E402
 
 _TABLES = (
     "teams",
@@ -123,7 +124,7 @@ def main() -> int:
     print("=" * 78)
 
     try:
-        with psycopg.connect(NEON_DATABASE_URL) as conn:
+        with psycopg.connect(_require_url()) as conn:
             with conn.transaction():
                 for label, sql in _SCHEMA_STATEMENTS:
                     if label in _TABLES:
