@@ -1,0 +1,56 @@
+{
+  "team_code": "NZL",
+  "sportmonks_team_id": 18613,
+  "source": "manual_screenshots",
+  "notes": "Averages from three recent NZ qualifier lineups (SportMonks API returns no per-player ratings for OFC fixtures). Mapped by name_on_shirt to FIFA squad_no.",
+  "fixture_ratings": [
+    {
+      "label": "screenshot_1",
+      "players": {
+        "CROCOMBE": 5.4,
+        "PAYNE": 5.6,
+        "DE VRIES": 7.3,
+        "BINDON": 6.5,
+        "BELL": 6.3,
+        "WOOD": 7.3,
+        "SINGH": 6.0,
+        "JUST": 6.4,
+        "SURMAN": 6.1,
+        "OLD": 6.8,
+        "THOMAS": 4.0
+      }
+    },
+    {
+      "label": "screenshot_2",
+      "players": {
+        "PAULSEN": 6.6,
+        "BINDON": 7.2,
+        "SURMAN": 7.2,
+        "PAYNE": 8.2,
+        "OLD": 6.4,
+        "STAMENIC": 7.4,
+        "BELL": 7.6,
+        "JUST": 7.7,
+        "RANDALL": 7.7,
+        "BARBAROUSES": 7.8,
+        "MCCOWATT": 7.2
+      }
+    },
+    {
+      "label": "screenshot_3",
+      "players": {
+        "CROCOMBE": 5.6,
+        "DE VRIES": 6.1,
+        "BINDON": 6.7,
+        "SURMAN": 6.2,
+        "PAYNE": 6.4,
+        "STAMENIC": 6.4,
+        "THOMAS": 6.7,
+        "MCCOWATT": 6.0,
+        "OLD": 6.6,
+        "JUST": 6.4,
+        "WAINE": 5.7
+      }
+    }
+  ]
+}

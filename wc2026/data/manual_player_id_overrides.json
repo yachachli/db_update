@@ -1,0 +1,12 @@
+{
+  "notes": "Confirmed manual pairings for DOB-collision cases the auto-matcher refuses. Re-applied idempotently by scripts/resolve_ambiguous_matches.py --apply after squad reloads.",
+  "overrides": [
+    {
+      "sportmonks_player_id": 215532,
+      "team_code": "ARG",
+      "squad_no": 15,
+      "sm_name": "Nico González",
+      "notes": "Shares DOB 1998-04-06 with MOLINA Nahuel (#26); Molina auto-mapped via dob+name. González resolved by GONZALEZ surname."
+    }
+  ]
+}

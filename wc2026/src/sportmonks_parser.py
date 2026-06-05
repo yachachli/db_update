@@ -20,8 +20,11 @@ from src.sportmonks_client import WC_FINALS_LEAGUE_ID
 
 __all__ = [
     "STAT_TYPE_IDS",
+    "PLAYER_STAT_TYPE_IDS",
     "parse_fixture_to_match_stats",
+    "parse_fixture_player_ratings",
     "extract_stat_value",
+    "extract_lineup_detail_value",
 ]
 
 # SportMonks stat type_ids -> the stats we read. Resolved and verified in
@@ -36,11 +39,35 @@ STAT_TYPE_IDS = {
     "possession": 45,  # Ball Possession % (display-only)
 }
 
+# Per-player lineup detail type_ids (display-only; see scripts/diag_player_ratings.py).
+PLAYER_STAT_TYPE_IDS = {
+    "rating": 118,
+    "minutes_played": 119,
+}
+
 # WC Qualification Intercontinental Playoffs (see leagues_catalog.json).
 _WC_PLAYOFF_LEAGUE_ID = 729
 
 # Kickoff timestamp format used by SportMonks (e.g. "2025-06-06 18:45:00").
 _STARTING_AT_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+
+def extract_lineup_detail_value(
+    details: list[Any],
+    type_id: int,
+) -> float | None:
+    """Return one lineup detail value from a player's ``details`` list, or None."""
+    if not isinstance(details, list):
+        return None
+    for detail in details:
+        if not isinstance(detail, dict) or detail.get("type_id") != type_id:
+            continue
+        data = detail.get("data")
+        if isinstance(data, dict) and data.get("value") is not None:
+            return float(data["value"])
+        if detail.get("value") is not None:
+            return float(detail["value"])
+    return None
 
 
 def extract_stat_value(
@@ -131,6 +158,79 @@ def _identify_opponent(
         if participant.get("id") != team_id:
             return int(participant.get("id", 0)), str(participant.get("name", ""))
     return 0, ""
+
+
+def _extract_lineup_player_dob(lineup_row: dict[str, Any]) -> str | None:
+    """Return ISO YYYY-MM-DD from ``lineups.player.date_of_birth``, if present."""
+    player = lineup_row.get("player")
+    if not isinstance(player, dict):
+        return None
+    dob = player.get("date_of_birth") or player.get("dateOfBirth")
+    if dob is None:
+        return None
+    text = str(dob).strip()
+    if len(text) >= 10 and text[4] == "-" and text[7] == "-":
+        return text[:10]
+    return None
+
+
+def parse_fixture_player_ratings(
+    fixture: dict[str, Any],
+    team_id: int,
+) -> list[dict[str, Any]]:
+    """Extract per-player ratings for ``team_id`` from a single fixture response.
+
+    Each returned row is scoped to this fixture only (includes ``fixture_id``).
+    Players without a RATING detail (type_id 118) are omitted. Does not merge
+    or read data from any other fixture.
+    """
+    fixture_id = int(fixture["id"])
+    lineups = fixture.get("lineups")
+    if not isinstance(lineups, list):
+        return []
+
+    rows: list[dict[str, Any]] = []
+    for lineup_row in lineups:
+        if not isinstance(lineup_row, dict):
+            continue
+        row_team = lineup_row.get("team_id") or lineup_row.get("participant_id")
+        if row_team is None or int(row_team) != int(team_id):
+            continue
+
+        details = lineup_row.get("details")
+        if not isinstance(details, list):
+            details = []
+
+        rating = extract_lineup_detail_value(
+            details, PLAYER_STAT_TYPE_IDS["rating"]
+        )
+        if rating is None:
+            continue
+
+        player_id = lineup_row.get("player_id")
+        if player_id is None:
+            continue
+
+        minutes = extract_lineup_detail_value(
+            details, PLAYER_STAT_TYPE_IDS["minutes_played"]
+        )
+        player_name = str(
+            lineup_row.get("player_name")
+            or lineup_row.get("name")
+            or "?"
+        )
+
+        rows.append(
+            {
+                "fixture_id": fixture_id,
+                "player_id": int(player_id),
+                "player_name": player_name,
+                "rating": rating,
+                "minutes_played": minutes if minutes is not None else 0.0,
+                "dob": _extract_lineup_player_dob(lineup_row),
+            }
+        )
+    return rows
 
 
 def parse_fixture_to_match_stats(

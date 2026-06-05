@@ -6,6 +6,11 @@ on:
   schedule:
     - cron: '0 10 * * *'
   workflow_dispatch:
+    inputs:
+      within_days:
+        description: 'Predict fixtures kicking off within this many days (default 3). Use a larger value to backfill the opening slate.'
+        required: false
+        default: '3'
 
 defaults:
   run:
@@ -33,4 +38,5 @@ jobs:
         env:
           NEON_DATABASE_URL: ${{ secrets.DB_URL }}
           SPORTMONKS_API_KEY: ${{ secrets.SPORTMONKS_API_KEY }}
+          REFRESH_WITHIN_DAYS: ${{ github.event.inputs.within_days || '3' }}
         run: python scripts/cron_refresh_predictions.py

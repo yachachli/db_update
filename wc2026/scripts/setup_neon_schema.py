@@ -23,6 +23,11 @@ _TABLES = (
     "fifa_rankings",
     "wc2026_fixtures",
     "predictions",
+    "wc2026_squads",
+    "player_id_map",
+    "player_match_review",
+    "team_player_ratings",
+    "player_ratings_history",
 )
 
 _SCHEMA_STATEMENTS: list[tuple[str, str]] = [
@@ -97,6 +102,118 @@ _SCHEMA_STATEMENTS: list[tuple[str, str]] = [
     ("idx_predictions_predicted_at", """
         CREATE INDEX IF NOT EXISTS idx_predictions_predicted_at
             ON predictions(predicted_at DESC)
+    """),
+    ("wc2026_squads", """
+        CREATE TABLE IF NOT EXISTS wc2026_squads (
+            team_code TEXT NOT NULL,
+            team_name TEXT NOT NULL,
+            squad_no INTEGER NOT NULL,
+            position TEXT NOT NULL,
+            player_name TEXT NOT NULL,
+            first_names TEXT,
+            last_names TEXT,
+            name_on_shirt TEXT,
+            dob DATE,
+            club TEXT,
+            club_country TEXT,
+            height_cm INTEGER,
+            PRIMARY KEY (team_code, squad_no)
+        )
+    """),
+    ("idx_wc2026_squads_team_code", """
+        CREATE INDEX IF NOT EXISTS idx_wc2026_squads_team_code
+            ON wc2026_squads(team_code)
+    """),
+    ("player_id_map", """
+        CREATE TABLE IF NOT EXISTS player_id_map (
+            sportmonks_player_id BIGINT PRIMARY KEY,
+            team_code TEXT NOT NULL,
+            squad_no INTEGER NOT NULL,
+            match_method TEXT NOT NULL,
+            match_confidence REAL NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    """),
+    ("idx_player_id_map_team_code", """
+        CREATE INDEX IF NOT EXISTS idx_player_id_map_team_code
+            ON player_id_map(team_code)
+    """),
+    ("player_match_review", """
+        CREATE TABLE IF NOT EXISTS player_match_review (
+            sportmonks_player_id BIGINT NOT NULL,
+            team_code TEXT NOT NULL,
+            sm_name TEXT NOT NULL,
+            sm_dob DATE,
+            reason TEXT NOT NULL,
+            detail TEXT,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (sportmonks_player_id, team_code)
+        )
+    """),
+    ("idx_player_match_review_team_code", """
+        CREATE INDEX IF NOT EXISTS idx_player_match_review_team_code
+            ON player_match_review(team_code)
+    """),
+    ("team_player_ratings", """
+        CREATE TABLE IF NOT EXISTS team_player_ratings (
+            team_code TEXT NOT NULL,
+            squad_no INTEGER NOT NULL,
+            player_name TEXT NOT NULL,
+            avg_rating REAL NOT NULL,
+            matches_counted INTEGER NOT NULL,
+            source TEXT NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (team_code, squad_no)
+        )
+    """),
+    ("idx_team_player_ratings_team_code", """
+        CREATE INDEX IF NOT EXISTS idx_team_player_ratings_team_code
+            ON team_player_ratings(team_code)
+    """),
+    ("player_ratings_history", """
+        CREATE TABLE IF NOT EXISTS player_ratings_history (
+            entity_key TEXT NOT NULL,
+            sportmonks_player_id BIGINT,
+            team_code TEXT NOT NULL,
+            manual_squad_no INTEGER,
+            player_name TEXT NOT NULL,
+            avg_rating REAL NOT NULL,
+            minutes_share REAL,
+            matches_counted INTEGER NOT NULL,
+            source TEXT NOT NULL,
+            window_start_date DATE,
+            window_end_date DATE,
+            snapshot_date DATE NOT NULL,
+            computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (entity_key, snapshot_date)
+        )
+    """),
+    ("idx_player_ratings_history_team_code", """
+        CREATE INDEX IF NOT EXISTS idx_player_ratings_history_team_code
+            ON player_ratings_history(team_code)
+    """),
+    ("idx_player_ratings_history_snapshot_date", """
+        CREATE INDEX IF NOT EXISTS idx_player_ratings_history_snapshot_date
+            ON player_ratings_history(snapshot_date DESC)
+    """),
+    ("player_ratings_current", """
+        CREATE OR REPLACE VIEW player_ratings_current AS
+        SELECT DISTINCT ON (entity_key)
+            entity_key,
+            sportmonks_player_id,
+            team_code,
+            manual_squad_no,
+            player_name,
+            avg_rating,
+            minutes_share,
+            matches_counted,
+            source,
+            window_start_date,
+            window_end_date,
+            snapshot_date,
+            computed_at
+        FROM player_ratings_history
+        ORDER BY entity_key, snapshot_date DESC
     """),
 ]
 

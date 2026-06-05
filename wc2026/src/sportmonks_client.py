@@ -59,6 +59,10 @@ QUALIFIER_LEAGUE_IDS: list[int] = [
 # big chances, AND the expected-goals family), keyed by participant_id. It is
 # the single include we need to populate every MatchStats field.
 _FIXTURE_INCLUDE = "xGFixture;participants;scores;state;venue"
+# Display-only: per-player lineup stats (RATING type_id 118). Not used by MatchStats parsing.
+_FIXTURE_LINEUP_INCLUDE = (
+    f"{_FIXTURE_INCLUDE};lineups.details.type;lineups.player"
+)
 
 # How far back to look when fetching a team's recent fixtures. Covers the full
 # 2026 World Cup qualifying cycle. We fetch a generous page within the window
@@ -235,6 +239,20 @@ class SportmonksClient:
         response = self.get(
             f"fixtures/{fixture_id}",
             params={"include": _FIXTURE_INCLUDE},
+        )
+        data = response.get("data")
+        return data if isinstance(data, dict) else {}
+
+    def get_fixture_with_lineups(self, fixture_id: int) -> dict[str, Any]:
+        """Fetch one fixture with lineup player stats (display-only).
+
+        Adds ``lineups.details.type`` to the standard fixture includes so
+        per-player RATING values are available. Does not alter
+        :meth:`get_fixture_by_id` / bootstrap parsing behavior.
+        """
+        response = self.get(
+            f"fixtures/{fixture_id}",
+            params={"include": _FIXTURE_LINEUP_INCLUDE},
         )
         data = response.get("data")
         return data if isinstance(data, dict) else {}

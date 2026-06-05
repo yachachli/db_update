@@ -19,7 +19,7 @@ import difflib
 import json
 import logging
 import warnings
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -33,6 +33,10 @@ from src.fifa_rankings import (
 )
 from src.math_utils import compute_baseline_goals
 from src.models import MatchStats, Team, TeamRating, TournamentBaseline
+from src.player_ratings import (
+    build_matchup_player_display,
+    empty_team_player_display,
+)
 from src.prediction import predict_match
 from src.reporting import build_matchup_report, matchup_report_to_json
 from src.sportmonks_client import SportmonksClient, SportmonksError
@@ -43,6 +47,7 @@ __all__ = [
     "TournamentPool",
     "bootstrap_tournament_pool",
     "predict_matchup",
+    "predict_matchup_by_id",
     "load_host_overrides",
 ]
 
@@ -396,14 +401,45 @@ def predict_matchup(
     team_b_name: str,
     pool: TournamentPool | None = None,
 ) -> str:
-    """Predict a single matchup; return the JSON report as a string."""
+    """Predict a single matchup by team name; return the JSON report string."""
     if pool is None:
         pool = bootstrap_tournament_pool()
-
-    host_overrides = load_host_overrides()
     team_a = _resolve_team_by_name(team_a_name, pool)
     team_b = _resolve_team_by_name(team_b_name, pool)
+    return _predict_for_teams(team_a, team_b, pool)
 
+
+def predict_matchup_by_id(
+    team_a_id: int,
+    team_b_id: int,
+    pool: TournamentPool | None = None,
+    *,
+    player_display_cache: dict[str, Any] | None = None,
+) -> str:
+    """Predict a single matchup by SportMonks team id; return the JSON report.
+
+    Resolving by id sidesteps the name-format mismatches between the fixtures
+    table (e.g. "Czech Republic", "Cape Verde Islands") and the pool's
+    SportMonks team names, which silently skipped fixtures under name lookup.
+    """
+    if pool is None:
+        pool = bootstrap_tournament_pool()
+    team_a = _resolve_team_by_id(team_a_id, pool)
+    team_b = _resolve_team_by_id(team_b_id, pool)
+    return _predict_for_teams(
+        team_a, team_b, pool, player_display_cache=player_display_cache
+    )
+
+
+def _predict_for_teams(
+    team_a: Team,
+    team_b: Team,
+    pool: TournamentPool,
+    *,
+    player_display_cache: dict[str, Any] | None = None,
+) -> str:
+    """Shared prediction core: two resolved teams -> JSON matchup report."""
+    host_overrides = load_host_overrides()
     rating_a, matches_a, source_a, reason_a = _rating_for(team_a, pool, host_overrides)
     rating_b, matches_b, source_b, reason_b = _rating_for(team_b, pool, host_overrides)
 
@@ -422,7 +458,40 @@ def predict_matchup(
         team_a_data_source=source_a, team_b_data_source=source_b,
         team_a_host_reasoning=reason_a, team_b_host_reasoning=reason_b,
     )
-    return matchup_report_to_json(report)
+    player_ratings = _build_display_player_ratings(
+        team_a, team_b, cache=player_display_cache
+    )
+    return matchup_report_to_json(replace(report, player_ratings=player_ratings))
+
+
+def _build_display_player_ratings(
+    team_a: Team,
+    team_b: Team,
+    *,
+    cache: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build projected XI + squad display blocks; never raises.
+
+    Reads squad and id_map from Neon; ratings from SportMonks or manual fallback.
+    Reuses per-team blocks from ``cache`` (keyed by team_code) within a run.
+    """
+    try:
+        client = SportmonksClient()
+        return build_matchup_player_display(
+            client,
+            team_a.team_id,
+            team_b.team_id,
+            cache=cache,
+        )
+    except Exception as exc:  # noqa: BLE001 - display-only; must not block prediction
+        logger.warning(
+            "Could not build player_ratings for %s vs %s: %s",
+            team_a.name,
+            team_b.name,
+            exc,
+        )
+        empty = empty_team_player_display()
+        return {"team_a": dict(empty), "team_b": dict(empty)}
 
 
 def _rating_for(
@@ -444,6 +513,20 @@ def _rating_for(
         raise ValueError(f"No recent matches available for {team.name!r}.")
     rating = compute_team_rating(team, matches, pool.baseline)
     return rating, matches, _DATA_SOURCE_QUALIFIER, None
+
+
+def _resolve_team_by_id(team_id: int, pool: TournamentPool) -> Team:
+    """Look up a team by its SportMonks id among teams that have a rating path.
+
+    Only the rostered tournament teams (those with a match window or a synthetic
+    host rating) are predictable; opponent-only ids registered for the baseline
+    are rejected so they fail loudly rather than producing an empty rating.
+    """
+    if team_id in pool.host_ratings:
+        return pool.teams[team_id]
+    if team_id in pool.matches_by_team and team_id in pool.teams:
+        return pool.teams[team_id]
+    raise ValueError(f"No rostered team with id {team_id} in the pool.")
 
 
 def _resolve_team_by_name(name: str, pool: TournamentPool) -> Team:

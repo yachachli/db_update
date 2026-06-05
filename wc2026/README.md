@@ -36,7 +36,8 @@ python scripts/test_neon_connection.py
 
 ## Neon tables
 
-`teams`, `team_ratings`, `fifa_rankings`, `wc2026_fixtures`, `predictions`
+`teams`, `team_ratings`, `fifa_rankings`, `wc2026_fixtures`, `predictions`,
+`wc2026_squads`, `player_id_map`, `team_player_ratings`, `player_ratings_history`
 
 Source of truth for model code: [zernerdoescode/wc2026-predictor](https://github.com/zernerdoescode/wc2026-predictor).
 Copy `src/` + cron scripts here when updating.

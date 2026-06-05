@@ -142,6 +142,10 @@ BASELINE_MIN_MATCH_COUNT: Final[int] = 50  # min pool size for a confident basel
 # Match window
 # ---------------------------------------------------------------------------
 MATCH_WINDOW_SIZE: Final[int] = 5  # last 5 competitive matches
+# Display-only player ratings use the same recency window. Once WC finals
+# fixtures are played they enter this window automatically (league 732 is included
+# in Sportmonks fixture fetches) and averages repopulate on each report build.
+PLAYER_RATINGS_MATCH_WINDOW: Final[int] = MATCH_WINDOW_SIZE
 
 # ---------------------------------------------------------------------------
 # Poisson / Dixon-Coles

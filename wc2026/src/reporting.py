@@ -61,6 +61,10 @@ class MatchupReport:
     team_a_host_reasoning: str | None = None
     team_b_host_reasoning: str | None = None
 
+    # Display-only per-player ratings (see src/player_ratings.py). Does not
+    # affect prediction; omitted from math entirely.
+    player_ratings: dict[str, Any] | None = None
+
 
 def build_matchup_report(
     team_a: Team,
@@ -166,7 +170,16 @@ def matchup_report_to_dict(report: MatchupReport) -> dict[str, Any]:
                 report.team_b_host_reasoning,
             ),
         },
+        "player_ratings": report.player_ratings or _empty_player_ratings(),
     }
+
+
+def _empty_player_ratings() -> dict[str, Any]:
+    """Default player_ratings payload when display data could not be built."""
+    from src.player_ratings import empty_team_player_display
+
+    empty = empty_team_player_display()
+    return {"team_a": dict(empty), "team_b": dict(empty)}
 
 
 def _recent_form_section(
