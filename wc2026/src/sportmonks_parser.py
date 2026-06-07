@@ -160,6 +160,32 @@ def _identify_opponent(
     return 0, ""
 
 
+def _xgfixture_has_participant_stats(fixture: dict[str, Any], team_id: int) -> bool:
+    """True when ``xgfixture`` carries at least one stat row for ``team_id``."""
+    entries = fixture.get("xgfixture")
+    if not isinstance(entries, list) or not entries:
+        return False
+    return any(
+        isinstance(entry, dict) and entry.get("participant_id") == team_id
+        for entry in entries
+    )
+
+
+def _goals_from_scores(fixture: dict[str, Any], participant_id: int) -> int | None:
+    """Read full-time goals from the ``scores`` include (CURRENT description)."""
+    if not participant_id:
+        return None
+    for entry in fixture.get("scores") or []:
+        if not isinstance(entry, dict) or entry.get("description") != "CURRENT":
+            continue
+        if entry.get("participant_id") != participant_id:
+            continue
+        goals = (entry.get("score") or {}).get("goals")
+        if goals is not None:
+            return int(goals)
+    return None
+
+
 def _extract_lineup_player_dob(lineup_row: dict[str, Any]) -> str | None:
     """Return ISO YYYY-MM-DD from ``lineups.player.date_of_birth``, if present."""
     player = lineup_row.get("player")
@@ -279,6 +305,17 @@ def parse_fixture_to_match_stats(
     shots_on_target_conceded = int(
         extract_stat_value(fixture, opponent_id, STAT_TYPE_IDS["shots_on_target"])
     )
+
+    # AFC/CAF/OFC qualifiers on our SportMonks plan often return fixtures with
+    # scores but an empty xgfixture array. Fall back to CURRENT goals so the
+    # team still has a usable (goals-only) rating path.
+    if not _xgfixture_has_participant_stats(fixture, team_id):
+        scored = _goals_from_scores(fixture, team_id)
+        if scored is not None:
+            goals_scored = scored
+        conceded = _goals_from_scores(fixture, opponent_id)
+        if conceded is not None:
+            goals_conceded = conceded
 
     # Display-only.
     possession_pct = extract_stat_value(

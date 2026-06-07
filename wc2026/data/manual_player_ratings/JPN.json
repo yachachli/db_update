@@ -1,0 +1,25 @@
+{
+  "team_code": "JPN",
+  "sportmonks_team_id": 18597,
+  "source": "manual_screenshots",
+  "notes": "Recent Japan friendly. #3 Taniguchi subs for Yoshida (not on WC roster).",
+  "fixture_ratings": [
+    {
+      "label": "friendly_lineup",
+      "players": {
+        "1": 6.9,
+        "4": 6.9,
+        "3": 6.6,
+        "22": 7.7,
+        "16": 6.8,
+        "13": 7.1,
+        "7": 7.2,
+        "6": 6.4,
+        "10": 6.4,
+        "14": 6.2,
+        "8": 7.5,
+        "18": 6.6
+      }
+    }
+  ]
+}

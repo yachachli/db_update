@@ -1,0 +1,24 @@
+{
+  "team_code": "EGY",
+  "sportmonks_team_id": 18546,
+  "source": "manual_screenshots",
+  "notes": "Recent Egypt friendly; Salah in XI via override.",
+  "fixture_ratings": [
+    {
+      "label": "friendly_lineup",
+      "players": {
+        "SHOUBIR": 6.1,
+        "K. HAFEZ": 7.2,
+        "M. ABDELMONIEM": 6.9,
+        "YASSER": 7.3,
+        "M. HANY": 8.2,
+        "M. ATTIA": 7.7,
+        "M. LASHIN": 7.6,
+        "E. ASHOUR": 6.3,
+        "M. TREZEGUET": 6.5,
+        "MARMOUSH": 6.8,
+        "M. SALAH": 7.8
+      }
+    }
+  ]
+}

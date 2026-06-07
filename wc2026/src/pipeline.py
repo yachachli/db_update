@@ -91,11 +91,14 @@ def bootstrap_tournament_pool(
     if not force_refresh:
         cached = _load_pool_if_fresh(cache_path, cache_ttl_hours)
         if cached is not None:
+            merged = _bootstrap_missing_roster_teams(cached)
+            if merged is not cached:
+                _save_pool(merged, cache_path)
             logger.info(
                 "Loaded tournament pool from cache (%d teams, bootstrapped %s).",
-                len(cached.matches_by_team), cached.bootstrapped_at.isoformat(),
+                len(merged.matches_by_team), merged.bootstrapped_at.isoformat(),
             )
-            return cached
+            return merged
 
     logger.info("Bootstrapping tournament pool from scratch...")
     roster = _load_roster()
@@ -222,6 +225,109 @@ def bootstrap_tournament_pool(
 
 class _BootstrapSkip(RuntimeError):
     """Internal: a recoverable per-team bootstrap failure."""
+
+
+def _predictable_team_ids(pool: TournamentPool) -> set[int]:
+    return set(pool.host_ratings.keys()) | set(pool.matches_by_team.keys())
+
+
+def _bootstrap_missing_roster_teams(pool: TournamentPool) -> TournamentPool:
+    """Bootstrap roster entries absent from the pool without recomputing baseline.
+
+    Keeps the cached baseline frozen so adding teams (e.g. SCO/COD/JOR) only
+    enables new predictions and does not perturb existing fixture xG/probs.
+    """
+    roster = _load_roster()
+    predictable = _predictable_team_ids(pool)
+    missing = [
+        entry for entry in roster
+        if entry.get("sportmonks_team_id") is not None
+        and int(entry["sportmonks_team_id"]) not in predictable
+    ]
+    if not missing:
+        return pool
+
+    logger.info(
+        "Incremental roster bootstrap: %d team(s) missing from pool cache.",
+        len(missing),
+    )
+    host_overrides = load_host_overrides()
+    client = SportmonksClient()
+    mapper = TeamFifaMapper(pool.fifa_release)
+
+    teams = dict(pool.teams)
+    matches_by_team = dict(pool.matches_by_team)
+    host_ratings = dict(pool.host_ratings)
+    failed = list(pool.failed_teams)
+    opponent_points_cache: dict[int, float] = {}
+
+    for entry in missing:
+        search_name = entry.get("search_name", "")
+        try:
+            team_obj, resolved_id = _resolve_sportmonks_team(client, entry)
+            if resolved_id is None:
+                raise _BootstrapSkip(f"could not resolve a SportMonks id for {search_name!r}")
+
+            mapping = mapper.resolve(team_obj)
+            if not isinstance(mapping, TeamFifaMapping):
+                raise _BootstrapSkip(
+                    f"no FIFA match for {search_name!r} "
+                    f"(attempted {mapping.attempted_keys})"
+                )
+
+            team_name = team_obj.get("name") or search_name
+            override_key = _host_override_key(
+                team_name, search_name, mapping.fifa_country_code, host_overrides
+            )
+            is_host = override_key is not None or mapping.fifa_country_code in _HOST_CODES
+            team = Team(
+                team_id=resolved_id,
+                name=team_name,
+                confederation=entry.get("confederation", "UNKNOWN"),
+                fifa_points=mapping.fifa_points,
+                fifa_rank=mapping.fifa_rank,
+                is_host=is_host,
+            )
+            teams[resolved_id] = team
+
+            if override_key is not None:
+                matches_by_team[resolved_id] = []
+                host_ratings[resolved_id] = _build_host_rating(
+                    team, host_overrides[override_key], pool.baseline
+                )
+                logger.info("  -> %s: host nation added to pool.", team.name)
+                continue
+
+            fixtures = client.get_fixtures_for_team(
+                resolved_id, limit=config.MATCH_WINDOW_SIZE
+            )
+            matches: list[MatchStats] = []
+            for fixture in fixtures:
+                parsed = _parse_fixture(
+                    fixture, resolved_id, client, mapper, teams,
+                    opponent_points_cache,
+                )
+                if parsed is not None:
+                    matches.append(parsed)
+            matches_by_team[resolved_id] = matches
+            logger.info(
+                "  -> %s: %d match(es) added to pool (baseline unchanged).",
+                team.name, len(matches),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error("FAILED incremental bootstrap %s: %s", search_name, exc)
+            failed.append(search_name)
+
+    all_matches = [m for ms in matches_by_team.values() for m in ms]
+    return replace(
+        pool,
+        teams=teams,
+        matches_by_team=matches_by_team,
+        all_matches=all_matches,
+        host_ratings=host_ratings,
+        failed_teams=tuple(failed),
+        bootstrapped_at=datetime.now(),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -604,6 +710,7 @@ def _save_pool(pool: TournamentPool, cache_path: Path) -> None:
         "host_ratings": {
             str(tid): _teamrating_to_dict(r) for tid, r in pool.host_ratings.items()
         },
+        "baseline": _baseline_to_dict(pool.baseline),
     }
     cache_path.write_text(
         json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
@@ -623,7 +730,10 @@ def _pool_from_dict(payload: dict[str, Any], bootstrapped_at: datetime) -> Tourn
     all_matches = [m for ms in matches_by_team.values() for m in ms]
 
     fifa_release = FifaRankingsClient().fetch_ranking(payload["fifa_date_id"])
-    baseline = compute_baseline_goals(all_matches, teams)
+    if "baseline" in payload:
+        baseline = _baseline_from_dict(payload["baseline"])
+    else:
+        baseline = compute_baseline_goals(all_matches, teams)
 
     # matches_used=0 ratings would re-trigger the synthetic UserWarning on every
     # cache load; suppress it here since the warning already fired at bootstrap.
@@ -643,6 +753,26 @@ def _pool_from_dict(payload: dict[str, Any], bootstrapped_at: datetime) -> Tourn
         bootstrapped_at=bootstrapped_at,
         failed_teams=tuple(payload.get("failed_teams", [])),
         host_ratings=host_ratings,
+    )
+
+
+def _baseline_to_dict(baseline: TournamentBaseline) -> dict[str, Any]:
+    return {
+        "baseline_goals_per_match": baseline.baseline_goals_per_match,
+        "baseline_goals_per_team": baseline.baseline_goals_per_team,
+        "filtered_match_count": baseline.filtered_match_count,
+        "fifa_points_threshold": baseline.fifa_points_threshold,
+        "excluded_zero_stat_matches": baseline.excluded_zero_stat_matches,
+    }
+
+
+def _baseline_from_dict(d: dict[str, Any]) -> TournamentBaseline:
+    return TournamentBaseline(
+        baseline_goals_per_match=float(d["baseline_goals_per_match"]),
+        baseline_goals_per_team=float(d["baseline_goals_per_team"]),
+        filtered_match_count=int(d["filtered_match_count"]),
+        fifa_points_threshold=float(d["fifa_points_threshold"]),
+        excluded_zero_stat_matches=int(d.get("excluded_zero_stat_matches", 0)),
     )
 
 

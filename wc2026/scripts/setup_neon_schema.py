@@ -28,6 +28,7 @@ _TABLES = (
     "player_match_review",
     "team_player_ratings",
     "player_ratings_history",
+    "projected_lineups_history",
 )
 
 _SCHEMA_STATEMENTS: list[tuple[str, str]] = [
@@ -214,6 +215,78 @@ _SCHEMA_STATEMENTS: list[tuple[str, str]] = [
             computed_at
         FROM player_ratings_history
         ORDER BY entity_key, snapshot_date DESC
+    """),
+    ("projected_lineups_history", """
+        CREATE TABLE IF NOT EXISTS projected_lineups_history (
+            team_code TEXT NOT NULL,
+            snapshot_date DATE NOT NULL,
+            lineup_role TEXT NOT NULL,
+            lineup_slot INTEGER NOT NULL,
+            squad_no INTEGER NOT NULL,
+            player_name TEXT NOT NULL,
+            position TEXT,
+            avg_rating REAL,
+            minutes_share REAL,
+            matches_counted INTEGER,
+            match_method TEXT,
+            team_xi_status TEXT NOT NULL,
+            ratings_source TEXT,
+            computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (team_code, snapshot_date, lineup_role, lineup_slot)
+        )
+    """),
+    ("idx_projected_lineups_history_team_code", """
+        CREATE INDEX IF NOT EXISTS idx_projected_lineups_history_team_code
+            ON projected_lineups_history(team_code)
+    """),
+    ("idx_projected_lineups_history_snapshot_date", """
+        CREATE INDEX IF NOT EXISTS idx_projected_lineups_history_snapshot_date
+            ON projected_lineups_history(snapshot_date DESC)
+    """),
+    ("projected_lineups_current", """
+        CREATE OR REPLACE VIEW projected_lineups_current AS
+        SELECT DISTINCT ON (team_code, lineup_role, lineup_slot)
+            team_code,
+            snapshot_date,
+            lineup_role,
+            lineup_slot,
+            squad_no,
+            player_name,
+            position,
+            avg_rating,
+            minutes_share,
+            matches_counted,
+            match_method,
+            team_xi_status,
+            ratings_source,
+            computed_at
+        FROM projected_lineups_history
+        ORDER BY team_code, lineup_role, lineup_slot, snapshot_date DESC
+    """),
+    ("projected_lineups_csv", """
+        CREATE OR REPLACE VIEW projected_lineups_csv AS
+        SELECT
+            plc.team_code,
+            sq.team_name,
+            plc.snapshot_date,
+            plc.lineup_role,
+            plc.lineup_slot,
+            plc.squad_no,
+            plc.player_name,
+            plc.position,
+            plc.avg_rating,
+            plc.minutes_share,
+            plc.matches_counted,
+            plc.match_method,
+            plc.team_xi_status,
+            plc.ratings_source,
+            plc.computed_at
+        FROM projected_lineups_current plc
+        LEFT JOIN (
+            SELECT DISTINCT team_code, team_name
+            FROM wc2026_squads
+        ) sq ON sq.team_code = plc.team_code
+        ORDER BY plc.team_code ASC, plc.lineup_role ASC, plc.lineup_slot ASC
     """),
 ]
 

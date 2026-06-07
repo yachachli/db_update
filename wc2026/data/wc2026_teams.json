@@ -249,6 +249,56 @@
       "search_name": "Jamaica",
       "confederation": "CONCACAF",
       "tentative": true
+    },
+    {
+      "sportmonks_team_id": 18555,
+      "search_name": "South Africa",
+      "confederation": "CAF"
+    },
+    {
+      "sportmonks_team_id": 18718,
+      "search_name": "Czech Republic",
+      "confederation": "UEFA"
+    },
+    {
+      "sportmonks_team_id": 18625,
+      "search_name": "Bosnia and Herzegovina",
+      "confederation": "UEFA"
+    },
+    {
+      "sportmonks_team_id": 18804,
+      "search_name": "Haiti",
+      "confederation": "CONCACAF"
+    },
+    {
+      "sportmonks_team_id": 18910,
+      "search_name": "Curacao",
+      "confederation": "CONCACAF"
+    },
+    {
+      "sportmonks_team_id": 18564,
+      "search_name": "Sweden",
+      "confederation": "UEFA"
+    },
+    {
+      "sportmonks_team_id": 18823,
+      "search_name": "Cape Verde Islands",
+      "confederation": "CAF"
+    },
+    {
+      "sportmonks_team_id": 18706,
+      "search_name": "Scotland",
+      "confederation": "UEFA"
+    },
+    {
+      "sportmonks_team_id": 18552,
+      "search_name": "Congo DR",
+      "confederation": "CAF"
+    },
+    {
+      "sportmonks_team_id": 18559,
+      "search_name": "Jordan",
+      "confederation": "AFC"
     }
   ]
 }

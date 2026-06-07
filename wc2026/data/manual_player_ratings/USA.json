@@ -1,0 +1,40 @@
+{
+  "team_code": "USA",
+  "sportmonks_team_id": 18571,
+  "source": "manual_screenshots",
+  "notes": "Recent USMNT friendlies; roster name_on_shirt keys only.",
+  "fixture_ratings": [
+    {
+      "label": "friendly_freeman_luna",
+      "players": {
+        "FREESE": 6.3,
+        "TRUSTY": 7.6,
+        "MCKENZIE": 6.8,
+        "FREEMAN": 9.0,
+        "DEST": 7.6,
+        "ADAMS": 6.4,
+        "MCKENNIE": 5.6,
+        "BERHALTER": 8.6,
+        "PULISIC": 5.6,
+        "TILLMAN": 6.8,
+        "PEPI": 7.7
+      }
+    },
+    {
+      "label": "friendly_turner_senegal",
+      "players": {
+        "TURNER": 6.5,
+        "REAM": 6.7,
+        "MCKENZIE": 6.7,
+        "FREEMAN": 6.9,
+        "A. ROBINSON": 6.9,
+        "ADAMS": 6.4,
+        "BERHALTER": 6.6,
+        "DEST": 8.0,
+        "PULISIC": 8.4,
+        "PEPI": 7.7,
+        "REYNA": 6.9
+      }
+    }
+  ]
+}

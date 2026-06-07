@@ -1,0 +1,24 @@
+{
+  "team_code": "CIV",
+  "sportmonks_team_id": 18560,
+  "source": "manual_screenshots",
+  "notes": "Recent Ivory Coast friendly; roster numbers only.",
+  "fixture_ratings": [
+    {
+      "label": "friendly_lineup",
+      "players": {
+        "Y. FOFANA": 7.9,
+        "O. DIOMANDE": 7.2,
+        "FOFANA": 7.0,
+        "AGBADOU": 7.5,
+        "G. KONAN": 6.6,
+        "ADINGRA": 7.0,
+        "WAHI": 6.6,
+        "KESSIE": 6.5,
+        "SINGO": 6.5,
+        "DIAKITE": 6.4,
+        "G. DOUE": 8.7
+      }
+    }
+  ]
+}

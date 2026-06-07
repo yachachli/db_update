@@ -32,6 +32,8 @@ __all__ = [
     "player_ratings_result_to_dict",
     "persist_team_ratings_snapshot",
     "snapshot_player_ratings_for_pool",
+    "persist_projected_lineup_snapshot",
+    "snapshot_projected_lineups_for_pool",
     "build_projected_xi",
     "build_team_player_display_block",
     "build_matchup_player_display",
@@ -306,6 +308,125 @@ def _manual_team_code_for_id(team_id: int) -> str | None:
     return None
 
 
+_MANUAL_RATINGS_DIR = Path(__file__).resolve().parent.parent / "data" / "manual_player_ratings"
+_SQUADS_CSV_PATH = Path(__file__).resolve().parent.parent / "data" / "wc2026_squads.csv"
+
+
+def _squad_shirt_map_from_csv(team_code: str) -> dict[str, int]:
+    """Map FIFA name_on_shirt -> squad_no from the local roster CSV."""
+    import csv
+
+    if not _SQUADS_CSV_PATH.is_file():
+        return {}
+    mapping: dict[str, int] = {}
+    with _SQUADS_CSV_PATH.open(encoding="utf-8-sig", newline="") as handle:
+        for row in csv.DictReader(handle):
+            if str(row.get("team_code", "")).upper() != team_code.upper():
+                continue
+            shirt = str(row.get("name_on_shirt", "")).strip().upper()
+            if shirt:
+                mapping[shirt] = int(row["squad_no"])
+    return mapping
+
+
+def _squad_rows_for_code(team_code: str) -> list[dict[str, str]]:
+    import csv
+
+    if not _SQUADS_CSV_PATH.is_file():
+        return []
+    rows: list[dict[str, str]] = []
+    with _SQUADS_CSV_PATH.open(encoding="utf-8-sig", newline="") as handle:
+        for row in csv.DictReader(handle):
+            if str(row.get("team_code", "")).upper() == team_code.upper():
+                rows.append(row)
+    return rows
+
+
+def _player_name_for_squad_csv(team_code: str, squad_no: int) -> str:
+    import csv
+
+    if not _SQUADS_CSV_PATH.is_file():
+        return ""
+    with _SQUADS_CSV_PATH.open(encoding="utf-8-sig", newline="") as handle:
+        for row in csv.DictReader(handle):
+            if (
+                str(row.get("team_code", "")).upper() == team_code.upper()
+                and int(row["squad_no"]) == squad_no
+            ):
+                return str(row.get("player_name", ""))
+    return ""
+
+
+def _load_manual_ratings_from_json(team_code: str) -> dict[str, Any] | None:
+    """Load hardcoded friendly ratings when a manual JSON file exists for the team."""
+    path = _MANUAL_RATINGS_DIR / f"{team_code.upper()}.json"
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Could not read manual ratings %s: %s", path, exc)
+        return None
+
+    from collections import defaultdict
+
+    shirt_map = _squad_shirt_map_from_csv(team_code)
+    accum: dict[int, list[float]] = defaultdict(list)
+    for fixture in payload.get("fixture_ratings", []):
+        players = fixture.get("players", {})
+        if not isinstance(players, dict):
+            continue
+        for shirt, rating in players.items():
+            key = str(shirt).strip()
+            squad_no: int | None = None
+            if key.isdigit():
+                squad_no = int(key)
+            elif key.lower().startswith("squad:"):
+                squad_no = int(key.split(":", 1)[1])
+            else:
+                squad_no = shirt_map.get(key.upper())
+            if squad_no is None or squad_no not in {
+                int(row["squad_no"]) for row in _squad_rows_for_code(team_code)
+            }:
+                logger.warning(
+                    "Manual ratings: unknown player key %r for %s", shirt, team_code
+                )
+                continue
+            accum[squad_no].append(float(rating))
+
+    if not accum:
+        return None
+
+    listed: list[dict[str, Any]] = []
+    insufficient: list[dict[str, Any]] = []
+    for squad_no, ratings in sorted(accum.items()):
+        matches_counted = len(ratings)
+        avg_rating = round(sum(ratings) / matches_counted, 2)
+        entry: dict[str, Any] = {
+            "player_id": 0,
+            "player_name": _player_name_for_squad_csv(team_code, squad_no),
+            "avg_rating": avg_rating,
+            "matches_counted": matches_counted,
+            "dob": None,
+            "squad_no": squad_no,
+            "minutes_share": None,
+        }
+        if matches_counted >= MIN_RATED_APPEARANCES:
+            listed.append(entry)
+        else:
+            insufficient.append({**entry, "status": "insufficient_data"})
+
+    listed.sort(key=lambda row: row["avg_rating"], reverse=True)
+    insufficient.sort(key=lambda row: (-row["matches_counted"], row["player_name"]))
+    return {
+        "source": "manual",
+        "listed": listed,
+        "insufficient_data": insufficient,
+        "window_start_date": None,
+        "window_end_date": None,
+    }
+
+
 def _fallback_team_player_ratings(team_id: int) -> dict[str, Any] | None:
     """Load persisted manual averages when SportMonks has no per-player ratings."""
     try:
@@ -349,6 +470,19 @@ def build_player_ratings_for_team(
     rated players (e.g. OFC qualifiers), falls back to Neon team_player_ratings.
     Fails soft.
     """
+    try:
+        from src.database import get_fifa_code_for_team_id
+    except ImportError:
+        team_code = _manual_team_code_for_id(team_id)
+    else:
+        team_code = get_fifa_code_for_team_id(team_id) or _manual_team_code_for_id(
+            team_id
+        )
+    if team_code:
+        manual = _load_manual_ratings_from_json(team_code)
+        if manual is not None:
+            return manual
+
     fixtures = fetch_lineup_fixtures_for_team(client, team_id, limit=limit)
 
     if fixtures:
@@ -520,6 +654,119 @@ def snapshot_player_ratings_for_pool(pool: Any) -> dict[str, Any]:
         "teams_written": teams_written,
         "rows_written": rows_written,
         "by_source": by_source,
+        "skipped_team_codes": skipped,
+    }
+
+
+def _flatten_projected_lineup_rows(
+    team_code: str,
+    display: dict[str, Any],
+    *,
+    snapshot_date: date | None = None,
+) -> list[dict[str, Any]]:
+    """Turn one team display block into UPSERT rows for projected_lineups_history."""
+    snap = snapshot_date or date.today()
+    team_xi_status = str(display.get("status") or "no_qualifier_data")
+    ratings_source = display.get("ratings_source")
+    rows: list[dict[str, Any]] = []
+
+    for role, players in (
+        ("projected_xi", display.get("projected_xi") or []),
+        ("bench", display.get("bench") or []),
+    ):
+        for slot, player in enumerate(players, start=1):
+            squad_no = player.get("squad_no")
+            if squad_no is None:
+                continue
+            rows.append(
+                {
+                    "team_code": team_code.upper(),
+                    "snapshot_date": snap,
+                    "lineup_role": role,
+                    "lineup_slot": slot,
+                    "squad_no": int(squad_no),
+                    "player_name": str(player.get("player_name", "")),
+                    "position": player.get("position"),
+                    "avg_rating": player.get("avg_rating"),
+                    "minutes_share": player.get("minutes_share"),
+                    "matches_counted": player.get("matches_counted"),
+                    "match_method": player.get("match_method"),
+                    "team_xi_status": team_xi_status,
+                    "ratings_source": ratings_source,
+                }
+            )
+    return rows
+
+
+def persist_projected_lineup_snapshot(
+    team_code: str,
+    display: dict[str, Any],
+    *,
+    snapshot_date: date | None = None,
+) -> int:
+    """UPSERT projected XI + bench rows for one team. Fail-soft on DB errors."""
+    rows = _flatten_projected_lineup_rows(
+        team_code, display, snapshot_date=snapshot_date
+    )
+    if not rows:
+        return 0
+    try:
+        from src.database import DatabaseError, upsert_projected_lineups_history_rows
+    except ImportError:
+        return 0
+    try:
+        return upsert_projected_lineups_history_rows(rows)
+    except DatabaseError as exc:
+        logger.warning(
+            "Could not persist projected_lineups_history for %s: %s",
+            team_code,
+            exc,
+        )
+        return 0
+
+
+def snapshot_projected_lineups_for_pool(pool: Any) -> dict[str, Any]:
+    """Compute and persist one projected-lineup snapshot per WC squad team."""
+    del pool
+    try:
+        from src.database import (
+            get_team_id_for_fifa_code,
+            get_wc2026_squad_team_codes,
+        )
+    except ImportError:
+        return {
+            "teams_written": 0,
+            "rows_written": 0,
+            "xi_ok_teams": 0,
+            "skipped_team_codes": [],
+        }
+
+    client = SportmonksClient()
+    teams_written = 0
+    rows_written = 0
+    xi_ok_teams = 0
+    skipped: list[str] = []
+
+    for team_code in get_wc2026_squad_team_codes():
+        team_id = get_team_id_for_fifa_code(team_code) or _manual_team_id_for_code(
+            team_code
+        )
+        if team_id is None:
+            skipped.append(team_code)
+            continue
+
+        display = build_team_player_display_for_code(team_code, team_id, client)
+        n = persist_projected_lineup_snapshot(team_code, display)
+        if n > 0:
+            teams_written += 1
+            rows_written += n
+            if display.get("status") == "ok" and len(display.get("projected_xi") or []) == 11:
+                xi_ok_teams += 1
+
+    return {
+        "teams_written": teams_written,
+        "rows_written": rows_written,
+        "xi_ok_teams": xi_ok_teams,
         "skipped_team_codes": skipped,
     }
 
@@ -709,6 +956,8 @@ def build_projected_xi(
     squad_rows: list[dict[str, Any]],
     id_map: list[dict[str, Any]],
     formation: tuple[int, int, int, int] = _DEFAULT_FORMATION,
+    *,
+    team_code: str | None = None,
 ) -> dict[str, Any]:
     """Build a projected starting XI from ratings, squad rows, and id_map.
 
@@ -722,17 +971,6 @@ def build_projected_xi(
         "status": "no_qualifier_data",
     }
 
-    if str(team_ratings.get("source", "")) == "manual":
-        return {
-            "projected_xi": [],
-            "bench": [],
-            "status": "manual_ratings_no_xi",
-        }
-
-    rated_players = _rated_players_from_team_ratings(team_ratings)
-    if not rated_players:
-        return dict(empty)
-
     if len(formation) != len(_POSITION_BUCKETS):
         raise ValueError(
             f"formation must have {len(_POSITION_BUCKETS)} slots "
@@ -741,18 +979,63 @@ def build_projected_xi(
 
     id_lookup = _normalize_id_map(id_map)
     squad_by_no = {int(row["squad_no"]): row for row in squad_rows}
+    team_overrides = (
+        _load_xi_overrides().get(team_code.upper(), {}) if team_code else {}
+    )
+    full_xi = team_overrides.get("full_xi") or []
+
+    rated_players = _rated_players_from_team_ratings(team_ratings)
+    if not rated_players and not full_xi:
+        return dict(empty)
 
     matched: list[dict[str, Any]] = []
+    seen_squad_nos: set[int] = set()
     for rating_row in rated_players:
+        direct_squad_no = rating_row.get("squad_no")
+        if direct_squad_no is not None:
+            squad_no = int(direct_squad_no)
+            if squad_no in seen_squad_nos:
+                continue
+            squad_row = squad_by_no.get(squad_no)
+            if squad_row is None:
+                continue
+            matched.append(
+                {
+                    "squad_no": squad_no,
+                    "player_name": str(squad_row.get("player_name", "")),
+                    "position": str(squad_row.get("position", "")),
+                    "avg_rating": rating_row.get("avg_rating"),
+                    "minutes_share": rating_row.get("minutes_share"),
+                    "matches_counted": int(rating_row.get("matches_counted", 0)),
+                    "match_method": str(rating_row.get("source", "manual")),
+                }
+            )
+            seen_squad_nos.add(squad_no)
+            continue
+
         player_id = int(rating_row["player_id"])
         mapping = id_lookup.get(player_id)
         if mapping is None:
             continue
         squad_no = int(mapping["squad_no"])
+        if squad_no in seen_squad_nos:
+            continue
         squad_row = squad_by_no.get(squad_no)
         if squad_row is None:
             continue
         matched.append(_xi_player_row(squad_row, rating_row, mapping))
+        seen_squad_nos.add(squad_no)
+
+    if full_xi:
+        projected_xi, bench = _build_full_xi_from_override(
+            full_xi, matched, squad_by_no
+        )
+        status = "ok" if len(projected_xi) == 11 else "partial"
+        return {
+            "projected_xi": projected_xi,
+            "bench": bench,
+            "status": status,
+        }
 
     if not matched:
         return dict(empty)
@@ -788,6 +1071,14 @@ def build_projected_xi(
         )
     )
 
+    projected_xi, bench = _apply_xi_overrides(
+        projected_xi,
+        bench,
+        matched,
+        squad_by_no=squad_by_no,
+        team_code=team_code,
+    )
+
     template_filled = all(
         len([row for row in projected_xi if str(row["position"]).upper() == position])
         == slot_counts[position]
@@ -800,6 +1091,161 @@ def build_projected_xi(
         "bench": bench,
         "status": status,
     }
+
+
+_XI_OVERRIDES_PATH = Path(__file__).resolve().parent.parent / "data" / "xi_overrides.json"
+
+
+def _load_xi_overrides() -> dict[str, Any]:
+    if not _XI_OVERRIDES_PATH.is_file():
+        return {}
+    try:
+        payload = json.loads(_XI_OVERRIDES_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Could not read xi_overrides.json: %s", exc)
+        return {}
+    teams = payload.get("teams", {})
+    if not isinstance(teams, dict):
+        return {}
+    return {
+        str(code).upper(): entry
+        for code, entry in teams.items()
+        if not str(code).startswith("_")
+    }
+
+
+def _xi_row_from_squad(
+    squad_row: dict[str, Any],
+    *,
+    rating_row: dict[str, Any] | None = None,
+    match_method: str = "manual_override",
+) -> dict[str, Any]:
+    squad_no = int(squad_row["squad_no"])
+    if rating_row is not None:
+        return {
+            "squad_no": squad_no,
+            "player_name": str(squad_row.get("player_name", "")),
+            "position": str(squad_row.get("position", "")),
+            "avg_rating": rating_row.get("avg_rating"),
+            "minutes_share": rating_row.get("minutes_share"),
+            "matches_counted": int(rating_row.get("matches_counted", 0)),
+            "match_method": match_method,
+        }
+    return {
+        "squad_no": squad_no,
+        "player_name": str(squad_row.get("player_name", "")),
+        "position": str(squad_row.get("position", "")),
+        "avg_rating": None,
+        "minutes_share": None,
+        "matches_counted": 0,
+        "match_method": match_method,
+    }
+
+
+def _build_full_xi_from_override(
+    full_xi: list[int | str],
+    matched: list[dict[str, Any]],
+    squad_by_no: dict[int, dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    by_no = {int(row["squad_no"]): row for row in matched}
+    projected_xi: list[dict[str, Any]] = []
+    for squad_no in full_xi:
+        squad_no = int(squad_no)
+        squad_row = squad_by_no.get(squad_no)
+        if squad_row is None:
+            continue
+        rating_row = by_no.get(squad_no)
+        projected_xi.append(
+            _xi_row_from_squad(
+                squad_row,
+                rating_row=rating_row,
+                match_method="manual_full_xi",
+            )
+        )
+    selected_nos = {int(row["squad_no"]) for row in projected_xi}
+    bench = [row for row in matched if int(row["squad_no"]) not in selected_nos]
+    bench.sort(
+        key=lambda row: (
+            row.get("avg_rating") is None,
+            -(float(row["avg_rating"]) if row.get("avg_rating") is not None else 0.0),
+            str(row["player_name"]).lower(),
+        )
+    )
+    return projected_xi, bench
+
+
+def _apply_xi_overrides(
+    projected_xi: list[dict[str, Any]],
+    bench: list[dict[str, Any]],
+    matched: list[dict[str, Any]],
+    *,
+    squad_by_no: dict[int, dict[str, Any]],
+    team_code: str | None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Swap manual starters into the XI (see data/xi_overrides.json)."""
+    if not team_code:
+        return projected_xi, bench
+
+    team_overrides = _load_xi_overrides().get(team_code.upper(), {})
+    if team_overrides.get("full_xi"):
+        return projected_xi, bench
+
+    force_starters = team_overrides.get("force_starters") or []
+    if not force_starters:
+        return projected_xi, bench
+
+    xi = list(projected_xi)
+    xi_nos = {int(row["squad_no"]) for row in xi}
+    by_no = {int(row["squad_no"]): row for row in matched}
+
+    for squad_no in force_starters:
+        squad_no = int(squad_no)
+        if squad_no in xi_nos:
+            continue
+        player = by_no.get(squad_no)
+        if player is None:
+            squad_row = squad_by_no.get(squad_no)
+            if squad_row is None:
+                continue
+            player = _xi_row_from_squad(squad_row)
+
+        position = str(player["position"]).upper()
+        same_pos = [row for row in xi if str(row["position"]).upper() == position]
+        if same_pos:
+            drop = min(
+                same_pos,
+                key=lambda row: (
+                    row.get("minutes_share") is None,
+                    float(row.get("minutes_share") or 0.0),
+                ),
+            )
+        elif xi:
+            drop = min(
+                xi,
+                key=lambda row: (
+                    row.get("minutes_share") is None,
+                    float(row.get("minutes_share") or 0.0),
+                ),
+            )
+        else:
+            xi.append(player)
+            xi_nos.add(squad_no)
+            continue
+
+        xi = [row for row in xi if int(row["squad_no"]) != int(drop["squad_no"])]
+        xi.append(player)
+        xi_nos.add(squad_no)
+
+    selected_nos = {int(row["squad_no"]) for row in xi}
+    new_bench = [row for row in matched if int(row["squad_no"]) not in selected_nos]
+    new_bench.sort(
+        key=lambda row: (
+            row.get("minutes_share") is None,
+            -(float(row["minutes_share"]) if row.get("minutes_share") is not None else 0.0),
+            str(row["player_name"]).lower(),
+        )
+    )
+    return xi, new_bench
 
 
 def resolve_team_code_for_id(team_id: int) -> str | None:
@@ -821,6 +1267,7 @@ def empty_team_player_display(
         "bench": [],
         "status": status,
         "squad": [],
+        "ratings_source": "none",
     }
 
 
@@ -869,10 +1316,16 @@ def build_team_player_display_block(
     squad_rows: list[dict[str, Any]],
     id_map: list[dict[str, Any]],
     formation: tuple[int, int, int, int] = _DEFAULT_FORMATION,
+    *,
+    team_code: str | None = None,
 ) -> dict[str, Any]:
     """Assemble projected XI, bench, status, and full squad for one team."""
     xi = build_projected_xi(
-        team_ratings, squad_rows, id_map, formation=formation
+        team_ratings,
+        squad_rows,
+        id_map,
+        formation=formation,
+        team_code=team_code,
     )
     attach = xi["status"] == "manual_ratings_no_xi"
     ratings_by_squad = _ratings_by_squad_no(team_ratings) if attach else None
@@ -886,6 +1339,7 @@ def build_team_player_display_block(
         "bench": xi["bench"],
         "status": xi["status"],
         "squad": squad,
+        "ratings_source": str(team_ratings.get("source") or "none"),
     }
 
 
@@ -917,7 +1371,9 @@ def build_team_player_display_for_code(
         return empty_team_player_display()
 
     team_ratings = build_player_ratings_for_team(client, team_id)
-    return build_team_player_display_block(team_ratings, squad_rows, id_map)
+    return build_team_player_display_block(
+        team_ratings, squad_rows, id_map, team_code=team_code
+    )
 
 
 def build_matchup_player_display(

@@ -27,8 +27,15 @@ from __future__ import annotations
 from src.config import (
     CONFEDERATION_MULTIPLIERS,
     DEFENSIVE_STAT_WEIGHTS,
+    FIFA_FORM_BLEND_WEIGHT,
+    FIFA_PRIOR_EXPONENT,
+    FORM_ATTACK_FIFA_CAP_RATIO,
+    GOALS_ONLY_DEFENSE_FLOOR_RATIO,
+    GOALS_ONLY_FIFA_BLEND,
+    GOALS_ONLY_MATCH_THRESHOLD,
     HOST_BONUS,
     OFFENSIVE_STAT_WEIGHTS,
+    REFERENCE_FIFA_POINTS,
     STAT_GOAL_CONVERSION_FACTORS,
 )
 from src.math_utils import match_quality_weight, weighted_average
@@ -115,6 +122,75 @@ def compute_raw_attack_rating(offensive_stats: dict[str, float]) -> float:
     )
 
 
+def _is_goals_only_match(match: MatchStats) -> bool:
+    """True when a match has no xG/xGOT and ratings rely on goals-only fallback."""
+    return (
+        match.xg_created == 0.0
+        and match.xg_conceded == 0.0
+        and match.xgot_created == 0.0
+        and match.xgot_conceded == 0.0
+    )
+
+
+def _goals_only_fraction(matches: list[MatchStats]) -> float:
+    if not matches:
+        return 0.0
+    return sum(1 for match in matches if _is_goals_only_match(match)) / len(matches)
+
+
+def _fifa_prior_ratings(team: Team, advantage: float) -> tuple[float, float]:
+    """Return FIFA-implied attack and defense vulnerability (conf/host scaled)."""
+    ratio = team.fifa_points / REFERENCE_FIFA_POINTS
+    fifa_attack = (ratio ** FIFA_PRIOR_EXPONENT) * advantage
+    fifa_defense = (ratio ** -FIFA_PRIOR_EXPONENT) / advantage
+    return fifa_attack, fifa_defense
+
+
+def _blend_form_with_fifa_prior(
+    attack_form: float,
+    defense_form: float,
+    fifa_attack: float,
+    fifa_defense: float,
+    *,
+    form_weight: float,
+) -> tuple[float, float]:
+    """Shrink form ratings toward FIFA-implied priors."""
+    fifa_weight = 1.0 - form_weight
+    attack = form_weight * attack_form + fifa_weight * fifa_attack
+    defense = form_weight * defense_form + fifa_weight * fifa_defense
+    return attack, defense
+
+
+def _apply_goals_only_calibration(
+    attack_final: float,
+    defense_final: float,
+    fifa_attack: float,
+    fifa_defense: float,
+    goals_only_fraction: float,
+) -> tuple[float, float]:
+    """Pull thin-xG windows toward FIFA and floor artificially low vulnerability."""
+    if goals_only_fraction < GOALS_ONLY_MATCH_THRESHOLD:
+        return attack_final, defense_final
+
+    attack_final, defense_final = _blend_form_with_fifa_prior(
+        attack_final,
+        defense_final,
+        fifa_attack,
+        fifa_defense,
+        form_weight=1.0 - GOALS_ONLY_FIFA_BLEND,
+    )
+    defense_floor = fifa_defense * GOALS_ONLY_DEFENSE_FLOOR_RATIO
+    if defense_final < defense_floor:
+        defense_final = defense_floor
+    return attack_final, defense_final
+
+
+def _cap_attack_vs_fifa(attack_final: float, fifa_attack: float) -> float:
+    """Prevent short hot streaks from dwarfing long-run FIFA strength."""
+    cap = fifa_attack * FORM_ATTACK_FIFA_CAP_RATIO
+    return min(attack_final, cap)
+
+
 def compute_raw_defense_rating(defensive_stats: dict[str, float]) -> float:
     """Collapse weighted defensive stats into a single raw defense number.
 
@@ -144,6 +220,9 @@ def compute_team_rating(
         3. Reduce each to a raw attack / defense rating.
         4. Normalize both against the tournament per-team goal baseline.
         5. Apply confederation and host adjustments.
+        6. Blend toward FIFA-implied priors and cap hot-streak attack inflation.
+        7. For goals-only match windows, pull further toward FIFA and floor
+           artificially low defensive vulnerability.
 
     Home-soil advantage (see module docstring): the confederation multiplier
     and host bonus *multiply* the attack rating (more goals scored) but
@@ -172,8 +251,25 @@ def compute_team_rating(
     host_mult = HOST_BONUS if team.is_host else 1.0
     advantage = confederation_mult * host_mult
 
-    attack_final = attack_normalized * advantage
-    defense_final = defense_normalized / advantage
+    attack_form = attack_normalized * advantage
+    defense_form = defense_normalized / advantage
+
+    fifa_attack, fifa_defense = _fifa_prior_ratings(team, advantage)
+    attack_final, defense_final = _blend_form_with_fifa_prior(
+        attack_form,
+        defense_form,
+        fifa_attack,
+        fifa_defense,
+        form_weight=1.0 - FIFA_FORM_BLEND_WEIGHT,
+    )
+    attack_final = _cap_attack_vs_fifa(attack_final, fifa_attack)
+    attack_final, defense_final = _apply_goals_only_calibration(
+        attack_final,
+        defense_final,
+        fifa_attack,
+        fifa_defense,
+        _goals_only_fraction(matches),
+    )
 
     return TeamRating(
         team_id=team.team_id,

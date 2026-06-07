@@ -171,6 +171,31 @@ def matchup_report_to_dict(report: MatchupReport) -> dict[str, Any]:
             ),
         },
         "player_ratings": report.player_ratings or _empty_player_ratings(),
+        "projected_lineups": _projected_lineups_section(report.player_ratings),
+    }
+
+
+def _projected_lineups_section(
+    player_ratings: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Top-level projected XI + bench for each team (display-only)."""
+    from src.player_ratings import empty_team_player_display
+
+    empty = empty_team_player_display()
+
+    def _team(block: dict[str, Any] | None) -> dict[str, Any]:
+        src = block or empty
+        return {
+            "status": src.get("status", "no_qualifier_data"),
+            "ratings_source": src.get("ratings_source", "none"),
+            "projected_xi": src.get("projected_xi") or [],
+            "bench": src.get("bench") or [],
+        }
+
+    pr = player_ratings or _empty_player_ratings()
+    return {
+        "team_a": _team(pr.get("team_a")),
+        "team_b": _team(pr.get("team_b")),
     }
 
 

@@ -1,0 +1,24 @@
+{
+  "team_code": "GHA",
+  "sportmonks_team_id": 18553,
+  "source": "manual_screenshots",
+  "notes": "Recent Ghana friendly ratings.",
+  "fixture_ratings": [
+    {
+      "label": "friendly_lineup",
+      "players": {
+        "ZIGI": 6.4,
+        "SENEYA": 7.0,
+        "ADJETEY": 6.6,
+        "OPOKU": 7.5,
+        "MENSAH": 7.7,
+        "FATAWU": 6.3,
+        "THOMAS": 6.2,
+        "OWUSU": 7.1,
+        "KAMALDEEN": 6.4,
+        "AYEW": 7.1,
+        "ADU": 6.0
+      }
+    }
+  ]
+}

@@ -46,6 +46,9 @@ __all__ = [
     "get_fifa_code_for_team_id",
     "upsert_player_ratings_history_rows",
     "get_player_ratings_snapshot_summary",
+    "upsert_projected_lineups_history_rows",
+    "get_projected_lineups_snapshot_summary",
+    "export_projected_lineups_csv_rows",
     "get_team_id_for_fifa_code",
     "get_player_id_map_for_team",
 ]
@@ -746,3 +749,113 @@ def get_player_ratings_snapshot_summary(
         "sample_arg": [dict(r) for r in sample_arg],
         "sample_nzl": [dict(r) for r in sample_nzl],
     }
+
+
+def upsert_projected_lineups_history_rows(rows: list[dict[str, Any]]) -> int:
+    """Batch UPSERT daily projected lineup rows (XI + bench)."""
+    if not rows:
+        return 0
+    with get_connection() as conn:
+        with conn.transaction():
+            for row in rows:
+                conn.execute(
+                    """
+                    INSERT INTO projected_lineups_history (
+                        team_code, snapshot_date, lineup_role, lineup_slot,
+                        squad_no, player_name, position, avg_rating,
+                        minutes_share, matches_counted, match_method,
+                        team_xi_status, ratings_source, computed_at
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                    ON CONFLICT (team_code, snapshot_date, lineup_role, lineup_slot)
+                    DO UPDATE SET
+                        squad_no = EXCLUDED.squad_no,
+                        player_name = EXCLUDED.player_name,
+                        position = EXCLUDED.position,
+                        avg_rating = EXCLUDED.avg_rating,
+                        minutes_share = EXCLUDED.minutes_share,
+                        matches_counted = EXCLUDED.matches_counted,
+                        match_method = EXCLUDED.match_method,
+                        team_xi_status = EXCLUDED.team_xi_status,
+                        ratings_source = EXCLUDED.ratings_source,
+                        computed_at = NOW()
+                    """,
+                    (
+                        row["team_code"],
+                        row["snapshot_date"],
+                        row["lineup_role"],
+                        int(row["lineup_slot"]),
+                        int(row["squad_no"]),
+                        row["player_name"],
+                        row.get("position"),
+                        row.get("avg_rating"),
+                        row.get("minutes_share"),
+                        row.get("matches_counted"),
+                        row.get("match_method"),
+                        row["team_xi_status"],
+                        row.get("ratings_source"),
+                    ),
+                )
+    return len(rows)
+
+
+def get_projected_lineups_snapshot_summary(
+    snapshot_date: date | None = None,
+) -> dict[str, Any]:
+    """Return projected lineup row counts for one snapshot_date (default today)."""
+    snap = snapshot_date or date.today()
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT team_code, lineup_role, COUNT(*) AS n
+            FROM projected_lineups_history
+            WHERE snapshot_date = %s
+            GROUP BY team_code, lineup_role
+            ORDER BY team_code ASC, lineup_role ASC
+            """,
+            (snap,),
+        ).fetchall()
+        xi_ok = conn.execute(
+            """
+            SELECT COUNT(*) AS n
+            FROM projected_lineups_history
+            WHERE snapshot_date = %s
+              AND lineup_role = 'projected_xi'
+              AND team_xi_status = 'ok'
+            """,
+            (snap,),
+        ).fetchone()
+    teams_with_xi = len({str(r["team_code"]) for r in rows if r["lineup_role"] == "projected_xi"})
+    return {
+        "snapshot_date": snap.isoformat(),
+        "teams_with_xi": teams_with_xi,
+        "xi_ok_rows": int(xi_ok["n"]) if xi_ok else 0,
+        "by_team_role": [dict(r) for r in rows],
+    }
+
+
+def export_projected_lineups_csv_rows() -> list[dict[str, Any]]:
+    """Return all current projected lineup rows (CSV-ready via projected_lineups_csv)."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                team_code,
+                team_name,
+                snapshot_date,
+                lineup_role,
+                lineup_slot,
+                squad_no,
+                player_name,
+                position,
+                avg_rating,
+                minutes_share,
+                matches_counted,
+                match_method,
+                team_xi_status,
+                ratings_source,
+                computed_at
+            FROM projected_lineups_csv
+            """
+        ).fetchall()
+    return [dict(r) for r in rows]

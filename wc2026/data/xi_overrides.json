@@ -1,0 +1,69 @@
+{
+  "_comment": "Manual XI fixes. full_xi replaces the entire lineup; force_starters swaps individuals.",
+  "teams": {
+    "ARG": {
+      "force_starters": [10],
+      "notes": "Messi over Simeone"
+    },
+    "URU": {
+      "force_starters": [8],
+      "notes": "Valverde over Aguirre"
+    },
+    "GER": {
+      "full_xi": [1, 22, 4, 6, 15, 17, 8, 5, 11, 7, 14],
+      "notes": "Neuer in goal; outfield from recent form (4-3-3)"
+    },
+    "NOR": {
+      "force_starters": [10],
+      "notes": "Odegaard over Bobb"
+    },
+    "POR": {
+      "force_starters": [8],
+      "notes": "Bruno Fernandes over Neves"
+    },
+    "SUI": {
+      "force_starters": [9],
+      "notes": "Manzambi over Rieder"
+    },
+    "USA": {
+      "full_xi": [24, 6, 22, 16, 2, 4, 8, 14, 10, 17, 9],
+      "notes": "Recent friendly XI; roster-only players"
+    },
+    "MEX": {
+      "full_xi": [1, 23, 5, 3, 2, 6, 8, 25, 16, 9, 26],
+      "notes": "Rangel in goal (Malagon injured); recent friendly"
+    },
+    "CAN": {
+      "full_xi": [16, 2, 4, 13, 22, 17, 7, 8, 10, 9, 11],
+      "notes": "Recent friendly XI"
+    },
+    "EGY": {
+      "full_xi": [23, 15, 6, 2, 3, 19, 17, 8, 7, 22, 10],
+      "notes": "Salah starts over Zizo"
+    },
+    "GHA": {
+      "full_xi": [1, 26, 4, 18, 14, 5, 15, 7, 9, 25, 22],
+      "notes": "Recent friendly XI"
+    },
+    "SEN": {
+      "full_xi": [16, 25, 19, 2, 24, 26, 5, 8, 10, 11, 13],
+      "notes": "Recent friendly XI"
+    },
+    "CIV": {
+      "full_xi": [1, 2, 20, 3, 5, 8, 6, 17, 14, 12, 10],
+      "notes": "Recent friendly XI; roster squad numbers only"
+    },
+    "KOR": {
+      "full_xi": [1, 2, 4, 13, 22, 10, 6, 3, 11, 9, 26],
+      "notes": "Friendly XI; ages used to disambiguate Lee/Kim/Hwang"
+    },
+    "UZB": {
+      "full_xi": [12, 2, 18, 5, 4, 9, 7, 13, 19, 11, 14],
+      "notes": "Recent friendly XI"
+    },
+    "JPN": {
+      "full_xi": [1, 4, 22, 3, 16, 13, 7, 6, 8, 10, 18],
+      "notes": "Recent friendly; Taniguchi for Yoshida (not on roster)"
+    }
+  }
+}

@@ -1,4 +1,4 @@
-# WC 2026: daily prediction refresh for fixtures in the next 3 days.
+# WC 2026: daily pool refresh, ratings + projected lineups, and predictions.
 # Runs after fixture fetch (06:00 UTC); scheduled at 10:00 UTC.
 name: WC 2026 Refresh Predictions
 

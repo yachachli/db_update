@@ -1,0 +1,24 @@
+{
+  "team_code": "MEX",
+  "sportmonks_team_id": 18576,
+  "source": "manual_screenshots",
+  "notes": "Rangel starts (Malagon injured). Recent friendly ratings.",
+  "fixture_ratings": [
+    {
+      "label": "friendly_rangel",
+      "players": {
+        "R. RANGEL": 6.0,
+        "J. GALLARDO": 5.7,
+        "J. VÁSQUEZ": 7.6,
+        "C. MONTES": 6.5,
+        "J. SÁNCHEZ": 6.6,
+        "E. LIRA": 6.3,
+        "FIDALGO": 6.9,
+        "R. ALVARADO": 7.5,
+        "J. QUIÑONES": 7.1,
+        "RAÚL": 7.9,
+        "B. GUTIÉRREZ": 8.3
+      }
+    }
+  ]
+}

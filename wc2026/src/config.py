@@ -131,6 +131,19 @@ FIFA_STRENGTH_EXPONENT: Final[float] = 0.5  # square-root compression
 # Opponents this many points below a team are excluded from baseline calc.
 FIFA_POINTS_FILTER_THRESHOLD: Final[int] = 600
 
+# FIFA prior blended into form-based ratings (0 = pure recent form, 1 = pure FIFA).
+FIFA_FORM_BLEND_WEIGHT: Final[float] = 0.48
+# Maps FIFA points gap to attack/defense priors before confederation/host scaling.
+FIFA_PRIOR_EXPONENT: Final[float] = 0.72
+
+# Qualifier windows with little xG data (goals-only fallback) are unreliable.
+GOALS_ONLY_MATCH_THRESHOLD: Final[float] = 0.6  # fraction of last-5 window
+GOALS_ONLY_FIFA_BLEND: Final[float] = 0.62  # extra pull toward FIFA when thin xG
+# Hot streaks cannot exceed FIFA-implied attack by more than this ratio.
+FORM_ATTACK_FIFA_CAP_RATIO: Final[float] = 1.05
+# Goals-only defenses look artificially stingy; floor vulnerability at FIFA prior.
+GOALS_ONLY_DEFENSE_FLOOR_RATIO: Final[float] = 1.0
+
 # Baseline data-quality safety net. If the filtered match pool is too small or
 # the computed per-team goal baseline is implausibly low (a symptom of
 # zero-stat / missing-data matches polluting the pool), fall back to a

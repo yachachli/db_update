@@ -1,0 +1,24 @@
+{
+  "team_code": "UZB",
+  "sportmonks_team_id": 18745,
+  "source": "manual_screenshots",
+  "notes": "Recent Uzbekistan friendly ratings.",
+  "fixture_ratings": [
+    {
+      "label": "friendly_lineup",
+      "players": {
+        "NEMATOV": 6.0,
+        "KHUSANOV": 7.7,
+        "ABDULLAEV": 6.9,
+        "ASHURMATOV": 6.4,
+        "SAYFIEV": 6.6,
+        "XAMROBEKOV": 6.2,
+        "SHUKUROV": 5.6,
+        "NASRULLAEV": 6.8,
+        "GANIEV": 5.7,
+        "URUNOV": 6.5,
+        "SHOMURODOV": 6.0
+      }
+    }
+  ]
+}

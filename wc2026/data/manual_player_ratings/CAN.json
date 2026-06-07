@@ -1,0 +1,24 @@
+{
+  "team_code": "CAN",
+  "sportmonks_team_id": 18572,
+  "source": "manual_screenshots",
+  "notes": "Recent Canada friendly ratings.",
+  "fixture_ratings": [
+    {
+      "label": "friendly_crepeau",
+      "players": {
+        "CRÉPEAU": 7.8,
+        "JOHNSTON": 7.1,
+        "DE FOUGEROLLES": 7.2,
+        "CORNELIUS": 7.6,
+        "LARYEA": 6.7,
+        "BUCHANAN": 7.4,
+        "EUSTÀQUIO": 7.5,
+        "KONÉ": 7.3,
+        "MILLAR": 7.4,
+        "J. DAVID": 7.2,
+        "LARIN": 6.1
+      }
+    }
+  ]
+}
