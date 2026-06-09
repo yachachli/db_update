@@ -7,6 +7,27 @@
       "squad_no": 15,
       "sm_name": "Nico González",
       "notes": "Shares DOB 1998-04-06 with MOLINA Nahuel (#26); Molina auto-mapped via dob+name. González resolved by GONZALEZ surname."
+    },
+    {
+      "sportmonks_player_id": 30642,
+      "team_code": "GER",
+      "squad_no": 1,
+      "sm_name": "Manuel Neuer",
+      "notes": "full_xi override; not in recent Germany lineups so auto-matcher skips him."
+    },
+    {
+      "sportmonks_player_id": 293709,
+      "team_code": "EGY",
+      "squad_no": 3,
+      "sm_name": "Mohamed Hany Eldemerdash",
+      "notes": "FIFA DOB 1996-02-02 vs SportMonks 1996-01-25; same player."
+    },
+    {
+      "sportmonks_player_id": 37685630,
+      "team_code": "SEN",
+      "squad_no": 25,
+      "sm_name": "El Hadji Malick Diouf",
+      "notes": "National-team roster jersey 25; DOB off by one day."
     }
   ]
 }

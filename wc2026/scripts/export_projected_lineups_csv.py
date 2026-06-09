@@ -26,6 +26,7 @@ _CSV_FIELDS = (
     "lineup_role",
     "lineup_slot",
     "squad_no",
+    "sportmonks_player_id",
     "player_name",
     "position",
     "avg_rating",

@@ -16,6 +16,7 @@ from datetime import date
 
 from src.player_ratings import (  # noqa: E402
     _flatten_projected_lineup_rows,
+    _valid_sm_player_id,
     build_projected_xi,
 )
 
@@ -61,6 +62,29 @@ def _team_ratings(*players: dict) -> dict:
         "listed": list(players),
         "insufficient_data": [],
     }
+
+
+def test_valid_sm_player_id_rejects_manual_sentinel_zero():
+    assert _valid_sm_player_id(0) is None
+    assert _valid_sm_player_id(184798) == 184798
+
+
+def test_build_projected_xi_attaches_sportmonks_player_id():
+    squad = [
+        _squad_row(1, "KEEPER A", "GK"),
+        _squad_row(9, "FWD A", "FW"),
+    ]
+    ratings = _team_ratings(
+        _rating(101, avg_rating=7.0, minutes_share=0.9),
+        _rating(109, avg_rating=6.5, minutes_share=0.8),
+    )
+    id_map = [
+        _map_row(101, 1),
+        _map_row(109, 9),
+    ]
+    result = build_projected_xi(ratings, squad, id_map, formation=(1, 0, 0, 1))
+    assert result["projected_xi"][0]["sportmonks_player_id"] == 101
+    assert result["projected_xi"][1]["sportmonks_player_id"] == 109
 
 
 def test_build_projected_xi_fills_full_template():
@@ -283,6 +307,7 @@ def test_flatten_projected_lineup_rows_for_neon():
         "projected_xi": [
             {
                 "squad_no": 10,
+                "sportmonks_player_id": 154421,
                 "player_name": "Messi",
                 "position": "FW",
                 "avg_rating": 7.8,
@@ -294,6 +319,7 @@ def test_flatten_projected_lineup_rows_for_neon():
         "bench": [
             {
                 "squad_no": 7,
+                "sportmonks_player_id": 999007,
                 "player_name": "Bench Player",
                 "position": "MF",
                 "avg_rating": 6.5,
@@ -311,5 +337,7 @@ def test_flatten_projected_lineup_rows_for_neon():
     assert rows[0]["lineup_slot"] == 1
     assert rows[0]["snapshot_date"] == snap
     assert rows[0]["team_xi_status"] == "ok"
+    assert rows[0]["sportmonks_player_id"] == 154421
     assert rows[1]["lineup_role"] == "bench"
+    assert rows[1]["sportmonks_player_id"] == 999007
     assert rows[1]["lineup_slot"] == 1

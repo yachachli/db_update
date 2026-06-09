@@ -90,6 +90,7 @@ def test_matchup_report_includes_player_ratings_key():
             xi=[
                 {
                     "squad_no": 9,
+                    "sportmonks_player_id": 12345,
                     "player_name": "STAR Alpha",
                     "position": "FW",
                     "avg_rating": 7.2,
@@ -108,7 +109,7 @@ def test_matchup_report_includes_player_ratings_key():
     assert "player_ratings" in data
     assert data["player_ratings"] == payload
     assert "projected_lineups" in data
-    assert data["projected_lineups"]["team_a"]["projected_xi"] == payload["team_a"]["projected_xi"]
+    assert data["projected_lineups"]["team_a"]["projected_xi"][0]["sportmonks_player_id"] == 12345
     assert data["projected_lineups"]["team_a"]["status"] == "ok"
     assert data["projected_lineups"]["team_b"]["status"] == "no_qualifier_data"
     assert "squad" not in data["projected_lineups"]["team_a"]

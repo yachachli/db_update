@@ -685,6 +685,9 @@ def _flatten_projected_lineup_rows(
                     "lineup_role": role,
                     "lineup_slot": slot,
                     "squad_no": int(squad_no),
+                    "sportmonks_player_id": _valid_sm_player_id(
+                        player.get("sportmonks_player_id")
+                    ),
                     "player_name": str(player.get("player_name", "")),
                     "position": player.get("position"),
                     "avg_rating": player.get("avg_rating"),
@@ -926,6 +929,290 @@ def _normalize_id_map(id_map: list[dict[str, Any]]) -> dict[int, dict[str, Any]]
     return lookup
 
 
+def _valid_sm_player_id(value: Any) -> int | None:
+    """Return a positive SportMonks player id, or None (0 is a manual-ratings sentinel)."""
+    if value is None:
+        return None
+    try:
+        sm_id = int(value)
+    except (TypeError, ValueError):
+        return None
+    return sm_id if sm_id > 0 else None
+
+
+def _squad_no_to_sm_id(id_map: list[dict[str, Any]]) -> dict[int, int]:
+    """Reverse index: FIFA squad_no -> sportmonks_player_id for one team."""
+    lookup: dict[int, int] = {}
+    for row in id_map:
+        squad_no = row.get("squad_no")
+        player_id = row.get("sportmonks_player_id")
+        if squad_no is None or player_id is None:
+            continue
+        lookup[int(squad_no)] = int(player_id)
+    return lookup
+
+
+def _load_manual_sm_id_overrides() -> dict[str, dict[int, int]]:
+    """team_code -> squad_no -> sportmonks_player_id from manual_player_id_overrides.json."""
+    if not _MANUAL_PLAYER_ID_OVERRIDES_PATH.is_file():
+        return {}
+    try:
+        payload = json.loads(
+            _MANUAL_PLAYER_ID_OVERRIDES_PATH.read_text(encoding="utf-8")
+        )
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Could not read manual_player_id_overrides.json: %s", exc)
+        return {}
+    by_team: dict[str, dict[int, int]] = {}
+    for entry in payload.get("overrides", []):
+        if not isinstance(entry, dict):
+            continue
+        code = str(entry.get("team_code", "")).upper()
+        squad_no = entry.get("squad_no")
+        sm_id = entry.get("sportmonks_player_id")
+        if not code or squad_no is None or sm_id is None:
+            continue
+        by_team.setdefault(code, {})[int(squad_no)] = int(sm_id)
+    return by_team
+
+
+def _lineup_squad_to_sm_id(
+    team_code: str | None,
+    id_map: list[dict[str, Any]],
+) -> dict[int, int]:
+    """Merged squad_no -> sportmonks_player_id (Neon id_map + manual overrides)."""
+    lookup = _squad_no_to_sm_id(id_map)
+    if team_code:
+        for squad_no, sm_id in _load_manual_sm_id_overrides().get(
+            team_code.upper(), {}
+        ).items():
+            lookup[squad_no] = sm_id
+    return lookup
+
+
+def _squad_row_search_names(squad_row: dict[str, Any]) -> list[str]:
+    """Build SportMonks search queries from FIFA squad name fields."""
+    first = str(squad_row.get("first_names", "")).strip()
+    last = str(squad_row.get("last_names", "")).strip()
+    shirt = str(squad_row.get("name_on_shirt", "")).strip()
+    display = str(squad_row.get("player_name", "")).strip()
+    variants: list[str] = []
+    if first and last:
+        variants.append(f"{first} {last}")
+    if display:
+        parts = display.split(None, 1)
+        if len(parts) == 2:
+            variants.append(f"{parts[1]} {parts[0].title()}")
+        variants.append(display)
+    if shirt:
+        variants.append(shirt)
+    if last:
+        variants.append(last)
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for name in variants:
+        key = name.upper()
+        if name and key not in seen:
+            seen.add(key)
+            ordered.append(name)
+    return ordered
+
+
+def _squad_name_tokens(squad_row: dict[str, Any]) -> set[str]:
+    return set(
+        normalize_name_tokens(
+            f"{squad_row.get('last_names', '')} "
+            f"{squad_row.get('first_names', '')} "
+            f"{squad_row.get('player_name', '')} "
+            f"{squad_row.get('name_on_shirt', '')}"
+        )
+    )
+
+
+def _parse_iso_date(value: Any) -> date | None:
+    if value is None or value == "":
+        return None
+    if hasattr(value, "isoformat"):
+        return value
+    try:
+        return date.fromisoformat(str(value))
+    except ValueError:
+        return None
+
+
+def _team_roster_entries(
+    team_id: int,
+    client: SportmonksClient,
+) -> list[dict[str, Any]]:
+    """Cached SportMonks national-team roster (players.player include)."""
+    if team_id in _team_roster_cache:
+        return _team_roster_cache[team_id]
+    try:
+        payload = client.get(
+            f"teams/{team_id}",
+            params={"include": "players.player"},
+        )
+        raw = (payload.get("data") or {}).get("players") or []
+    except Exception as exc:  # noqa: BLE001 - display-only fallback
+        logger.debug("Could not load team roster for team_id=%d: %s", team_id, exc)
+        _team_roster_cache[team_id] = []
+        return []
+
+    parsed: list[dict[str, Any]] = []
+    for entry in raw:
+        player = entry.get("player") or {}
+        sm_id = _valid_sm_player_id(player.get("id"))
+        if sm_id is None:
+            continue
+        parsed.append(
+            {
+                "id": sm_id,
+                "name": str(player.get("display_name") or player.get("name") or ""),
+                "dob": _parse_iso_date(player.get("date_of_birth")),
+                "jersey_number": entry.get("jersey_number"),
+            }
+        )
+    _team_roster_cache[team_id] = parsed
+    return parsed
+
+
+def _resolve_sm_id_from_team_roster(
+    squad_row: dict[str, Any],
+    team_id: int,
+    *,
+    client: SportmonksClient,
+) -> int | None:
+    """Match FIFA squad row to SportMonks national-team roster by DOB/name/jersey."""
+    squad_no = int(squad_row["squad_no"])
+    squad_dob = _parse_iso_date(squad_row.get("dob"))
+    squad_tokens = _squad_name_tokens(squad_row)
+    if not squad_tokens:
+        return None
+
+    jersey_hit: int | None = None
+    exact_hit: int | None = None
+    fuzzy_hit: int | None = None
+
+    for entry in _team_roster_entries(team_id, client):
+        name_tokens = set(normalize_name_tokens(entry["name"]))
+        if not (squad_tokens & name_tokens):
+            continue
+        entry_dob = entry.get("dob")
+        if (
+            entry.get("jersey_number") is not None
+            and int(entry["jersey_number"]) == squad_no
+        ):
+            jersey_hit = int(entry["id"])
+        if squad_dob is not None and entry_dob == squad_dob:
+            exact_hit = int(entry["id"])
+        elif (
+            squad_dob is not None
+            and entry_dob is not None
+            and abs((entry_dob - squad_dob).days) <= 7
+        ):
+            fuzzy_hit = int(entry["id"])
+
+    return jersey_hit or exact_hit or fuzzy_hit
+
+
+def _resolve_sm_id_for_squad_row(
+    squad_row: dict[str, Any],
+    *,
+    client: SportmonksClient,
+    team_id: int | None = None,
+) -> int | None:
+    """Fallback: SportMonks player search by squad name variants + DOB."""
+    dob = squad_row.get("dob")
+    dob_s = dob.isoformat() if hasattr(dob, "isoformat") else str(dob or "")
+    for search_name in _squad_row_search_names(squad_row):
+        cache_key = (search_name.upper(), dob_s)
+        if cache_key in _sm_id_search_cache:
+            cached = _sm_id_search_cache[cache_key]
+            if cached is not None:
+                return cached
+            continue
+        try:
+            response = client.get(f"players/search/{search_name}")
+        except Exception as exc:  # noqa: BLE001 - display-only fallback
+            logger.debug(
+                "SportMonks player search failed for %r: %s", search_name, exc
+            )
+            _sm_id_search_cache[cache_key] = None
+            continue
+
+        squad_dob = _parse_iso_date(dob_s) if dob_s else None
+        for player in response.get("data") or []:
+            player_dob = _parse_iso_date(player.get("date_of_birth"))
+            if squad_dob is not None and player_dob is not None:
+                if player_dob != squad_dob and abs((player_dob - squad_dob).days) > 7:
+                    continue
+            elif dob_s and str(player.get("date_of_birth")) != dob_s:
+                continue
+            sm_id = int(player["id"])
+            _sm_id_search_cache[cache_key] = sm_id
+            return sm_id
+        _sm_id_search_cache[cache_key] = None
+
+    if team_id is not None:
+        return _resolve_sm_id_from_team_roster(
+            squad_row, team_id, client=client
+        )
+    return None
+
+
+def _enrich_missing_lineup_sm_ids(
+    rows: list[dict[str, Any]],
+    squad_rows: list[dict[str, Any]],
+    squad_to_sm: dict[int, int],
+    *,
+    client: SportmonksClient | None = None,
+    team_id: int | None = None,
+) -> list[dict[str, Any]]:
+    """Fill sportmonks_player_id on lineup rows using id_map, then name search."""
+    if not rows:
+        return rows
+    squad_by_no = {int(row["squad_no"]): row for row in squad_rows}
+    enriched: list[dict[str, Any]] = []
+    for row in rows:
+        out = dict(row)
+        if _valid_sm_player_id(out.get("sportmonks_player_id")) is None:
+            out.pop("sportmonks_player_id", None)
+            squad_no = out.get("squad_no")
+            if squad_no is not None:
+                sm_id = squad_to_sm.get(int(squad_no))
+                if sm_id is None and client is not None:
+                    squad_row = squad_by_no.get(int(squad_no))
+                    if squad_row is not None:
+                        sm_id = _resolve_sm_id_for_squad_row(
+                            squad_row,
+                            client=client,
+                            team_id=team_id,
+                        )
+                if sm_id is not None:
+                    out["sportmonks_player_id"] = sm_id
+        enriched.append(out)
+    return enriched
+
+
+def _attach_sm_ids_to_lineup_rows(
+    rows: list[dict[str, Any]],
+    squad_to_sm: dict[int, int],
+) -> list[dict[str, Any]]:
+    """Ensure each lineup row carries sportmonks_player_id when id_map has it."""
+    enriched: list[dict[str, Any]] = []
+    for row in rows:
+        out = dict(row)
+        if _valid_sm_player_id(out.get("sportmonks_player_id")) is None:
+            out.pop("sportmonks_player_id", None)
+            squad_no = out.get("squad_no")
+            if squad_no is not None:
+                sm_id = squad_to_sm.get(int(squad_no))
+                if sm_id is not None:
+                    out["sportmonks_player_id"] = sm_id
+        enriched.append(out)
+    return enriched
+
+
 def _rated_players_from_team_ratings(team_ratings: dict[str, Any]) -> list[dict[str, Any]]:
     return list(team_ratings.get("listed", [])) + list(
         team_ratings.get("insufficient_data", [])
@@ -938,7 +1225,10 @@ def _xi_player_row(
     mapping_row: dict[str, Any],
 ) -> dict[str, Any]:
     minutes_share = rating_row.get("minutes_share")
-    return {
+    sm_id = _valid_sm_player_id(mapping_row.get("sportmonks_player_id"))
+    if sm_id is None:
+        sm_id = _valid_sm_player_id(rating_row.get("player_id"))
+    row: dict[str, Any] = {
         "squad_no": int(squad_row["squad_no"]),
         "player_name": str(squad_row.get("player_name", "")),
         "position": str(squad_row.get("position", "")),
@@ -949,6 +1239,9 @@ def _xi_player_row(
             mapping_row.get("match_method", mapping_row.get("method", ""))
         ),
     }
+    if sm_id is not None:
+        row["sportmonks_player_id"] = sm_id
+    return row
 
 
 def build_projected_xi(
@@ -978,6 +1271,7 @@ def build_projected_xi(
         )
 
     id_lookup = _normalize_id_map(id_map)
+    squad_to_sm = _lineup_squad_to_sm_id(team_code, id_map)
     squad_by_no = {int(row["squad_no"]): row for row in squad_rows}
     team_overrides = (
         _load_xi_overrides().get(team_code.upper(), {}) if team_code else {}
@@ -999,17 +1293,21 @@ def build_projected_xi(
             squad_row = squad_by_no.get(squad_no)
             if squad_row is None:
                 continue
-            matched.append(
-                {
-                    "squad_no": squad_no,
-                    "player_name": str(squad_row.get("player_name", "")),
-                    "position": str(squad_row.get("position", "")),
-                    "avg_rating": rating_row.get("avg_rating"),
-                    "minutes_share": rating_row.get("minutes_share"),
-                    "matches_counted": int(rating_row.get("matches_counted", 0)),
-                    "match_method": str(rating_row.get("source", "manual")),
-                }
-            )
+            manual_row: dict[str, Any] = {
+                "squad_no": squad_no,
+                "player_name": str(squad_row.get("player_name", "")),
+                "position": str(squad_row.get("position", "")),
+                "avg_rating": rating_row.get("avg_rating"),
+                "minutes_share": rating_row.get("minutes_share"),
+                "matches_counted": int(rating_row.get("matches_counted", 0)),
+                "match_method": str(rating_row.get("source", "manual")),
+            }
+            sm_id = _valid_sm_player_id(rating_row.get("player_id"))
+            if sm_id is None:
+                sm_id = squad_to_sm.get(squad_no)
+            if sm_id is not None:
+                manual_row["sportmonks_player_id"] = sm_id
+            matched.append(manual_row)
             seen_squad_nos.add(squad_no)
             continue
 
@@ -1032,8 +1330,8 @@ def build_projected_xi(
         )
         status = "ok" if len(projected_xi) == 11 else "partial"
         return {
-            "projected_xi": projected_xi,
-            "bench": bench,
+            "projected_xi": _attach_sm_ids_to_lineup_rows(projected_xi, squad_to_sm),
+            "bench": _attach_sm_ids_to_lineup_rows(bench, squad_to_sm),
             "status": status,
         }
 
@@ -1087,13 +1385,18 @@ def build_projected_xi(
     status = "ok" if template_filled else "partial"
 
     return {
-        "projected_xi": projected_xi,
-        "bench": bench,
+        "projected_xi": _attach_sm_ids_to_lineup_rows(projected_xi, squad_to_sm),
+        "bench": _attach_sm_ids_to_lineup_rows(bench, squad_to_sm),
         "status": status,
     }
 
 
 _XI_OVERRIDES_PATH = Path(__file__).resolve().parent.parent / "data" / "xi_overrides.json"
+_MANUAL_PLAYER_ID_OVERRIDES_PATH = (
+    Path(__file__).resolve().parent.parent / "data" / "manual_player_id_overrides.json"
+)
+_sm_id_search_cache: dict[tuple[str, str], int | None] = {}
+_team_roster_cache: dict[int, list[dict[str, Any]]] = {}
 
 
 def _load_xi_overrides() -> dict[str, Any]:
@@ -1318,8 +1621,11 @@ def build_team_player_display_block(
     formation: tuple[int, int, int, int] = _DEFAULT_FORMATION,
     *,
     team_code: str | None = None,
+    team_id: int | None = None,
+    client: SportmonksClient | None = None,
 ) -> dict[str, Any]:
     """Assemble projected XI, bench, status, and full squad for one team."""
+    squad_to_sm = _lineup_squad_to_sm_id(team_code, id_map)
     xi = build_projected_xi(
         team_ratings,
         squad_rows,
@@ -1327,6 +1633,24 @@ def build_team_player_display_block(
         formation=formation,
         team_code=team_code,
     )
+    if client is not None:
+        xi = {
+            **xi,
+            "projected_xi": _enrich_missing_lineup_sm_ids(
+                xi["projected_xi"],
+                squad_rows,
+                squad_to_sm,
+                client=client,
+                team_id=team_id,
+            ),
+            "bench": _enrich_missing_lineup_sm_ids(
+                xi["bench"],
+                squad_rows,
+                squad_to_sm,
+                client=client,
+                team_id=team_id,
+            ),
+        }
     attach = xi["status"] == "manual_ratings_no_xi"
     ratings_by_squad = _ratings_by_squad_no(team_ratings) if attach else None
     squad = _serialize_squad_rows(
@@ -1372,7 +1696,12 @@ def build_team_player_display_for_code(
 
     team_ratings = build_player_ratings_for_team(client, team_id)
     return build_team_player_display_block(
-        team_ratings, squad_rows, id_map, team_code=team_code
+        team_ratings,
+        squad_rows,
+        id_map,
+        team_code=team_code,
+        team_id=team_id,
+        client=client,
     )
 
 

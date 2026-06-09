@@ -762,14 +762,15 @@ def upsert_projected_lineups_history_rows(rows: list[dict[str, Any]]) -> int:
                     """
                     INSERT INTO projected_lineups_history (
                         team_code, snapshot_date, lineup_role, lineup_slot,
-                        squad_no, player_name, position, avg_rating,
-                        minutes_share, matches_counted, match_method,
+                        squad_no, sportmonks_player_id, player_name, position,
+                        avg_rating, minutes_share, matches_counted, match_method,
                         team_xi_status, ratings_source, computed_at
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
                     ON CONFLICT (team_code, snapshot_date, lineup_role, lineup_slot)
                     DO UPDATE SET
                         squad_no = EXCLUDED.squad_no,
+                        sportmonks_player_id = EXCLUDED.sportmonks_player_id,
                         player_name = EXCLUDED.player_name,
                         position = EXCLUDED.position,
                         avg_rating = EXCLUDED.avg_rating,
@@ -786,6 +787,7 @@ def upsert_projected_lineups_history_rows(rows: list[dict[str, Any]]) -> int:
                         row["lineup_role"],
                         int(row["lineup_slot"]),
                         int(row["squad_no"]),
+                        row.get("sportmonks_player_id"),
                         row["player_name"],
                         row.get("position"),
                         row.get("avg_rating"),
@@ -846,6 +848,7 @@ def export_projected_lineups_csv_rows() -> list[dict[str, Any]]:
                 lineup_role,
                 lineup_slot,
                 squad_no,
+                sportmonks_player_id,
                 player_name,
                 position,
                 avg_rating,

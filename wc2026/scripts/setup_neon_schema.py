@@ -223,6 +223,7 @@ _SCHEMA_STATEMENTS: list[tuple[str, str]] = [
             lineup_role TEXT NOT NULL,
             lineup_slot INTEGER NOT NULL,
             squad_no INTEGER NOT NULL,
+            sportmonks_player_id BIGINT,
             player_name TEXT NOT NULL,
             position TEXT,
             avg_rating REAL,
@@ -243,6 +244,20 @@ _SCHEMA_STATEMENTS: list[tuple[str, str]] = [
         CREATE INDEX IF NOT EXISTS idx_projected_lineups_history_snapshot_date
             ON projected_lineups_history(snapshot_date DESC)
     """),
+    ("projected_lineups_history_sportmonks_player_id", """
+        ALTER TABLE projected_lineups_history
+            ADD COLUMN IF NOT EXISTS sportmonks_player_id BIGINT
+    """),
+    ("idx_projected_lineups_history_sm_player_id", """
+        CREATE INDEX IF NOT EXISTS idx_projected_lineups_history_sm_player_id
+            ON projected_lineups_history(sportmonks_player_id)
+    """),
+    ("drop_projected_lineups_views", """
+        DROP VIEW IF EXISTS projected_lineups_csv
+    """),
+    ("drop_projected_lineups_current", """
+        DROP VIEW IF EXISTS projected_lineups_current
+    """),
     ("projected_lineups_current", """
         CREATE OR REPLACE VIEW projected_lineups_current AS
         SELECT DISTINCT ON (team_code, lineup_role, lineup_slot)
@@ -251,6 +266,7 @@ _SCHEMA_STATEMENTS: list[tuple[str, str]] = [
             lineup_role,
             lineup_slot,
             squad_no,
+            sportmonks_player_id,
             player_name,
             position,
             avg_rating,
@@ -272,6 +288,7 @@ _SCHEMA_STATEMENTS: list[tuple[str, str]] = [
             plc.lineup_role,
             plc.lineup_slot,
             plc.squad_no,
+            plc.sportmonks_player_id,
             plc.player_name,
             plc.position,
             plc.avg_rating,
