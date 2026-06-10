@@ -1,0 +1,18 @@
+{
+  "Qatar": {
+    "player_name": "Akram Afif",
+    "player_rank_used": 1,
+    "fotmob_id": 613792,
+    "compared_to": "attacking midfielders/wingers",
+    "data_source": "manual_trait_estimate",
+    "notes": "FotMob API has no traits chart for Qatari league players; user-supplied estimates.",
+    "traits": [
+      {"key": "chances_created", "title": "Chances created", "pct": 90, "basis": "elite creator/assister"},
+      {"key": "aerials_won", "title": "Aerial duels", "pct": 20, "basis": "small winger, rarely aerial"},
+      {"key": "defensive_actions", "title": "Defensive actions", "pct": 15, "basis": "attacking role, minimal defending"},
+      {"key": "goals", "title": "Goals", "pct": 88, "basis": "primary scorer for club & country"},
+      {"key": "shot_attempts", "title": "Shot attempts", "pct": 84, "basis": "high shot volume"},
+      {"key": "touches", "title": "Touches", "pct": 75, "basis": "heavily involved playmaker"}
+    ]
+  }
+}

@@ -11,11 +11,10 @@ aggregation, so no additional venue multiplier is applied here.
 
 from __future__ import annotations
 
-import numpy as np
-
 from src.math_utils import (
     compute_scoreline_matrix,
     dampen_xg,
+    derive_most_likely_scoreline,
     matrix_to_probabilities,
 )
 from src.models import MatchPrediction, TeamRating, TournamentBaseline
@@ -61,10 +60,7 @@ def predict_match(
     matrix = compute_scoreline_matrix(xg_a, xg_b)
     prob_a_win, prob_draw, prob_b_win = matrix_to_probabilities(matrix)
 
-    # argmax over the joint matrix -> (team A goals, team B goals)
-    flat_index = int(np.argmax(matrix))
-    goals_a, goals_b = np.unravel_index(flat_index, matrix.shape)
-    most_likely_scoreline = (int(goals_a), int(goals_b))
+    most_likely_scoreline = derive_most_likely_scoreline(xg_a, xg_b)
 
     return MatchPrediction(
         team_a_id=rating_a.team_id,

@@ -167,6 +167,19 @@ DIXON_COLES_TAU: Final[float] = -0.05
 MAX_GOALS_FOR_MATRIX: Final[int] = 6  # 0-0 through 6-6 scoreline matrix
 
 # ---------------------------------------------------------------------------
+# Most-likely scoreline (display heuristic)
+# ---------------------------------------------------------------------------
+# Win/draw/loss probabilities still come from the Dixon-Coles Poisson matrix.
+# The headline scoreline is derived from rounded xG; when the gap exceeds this
+# threshold the stronger side is shown winning by exactly one goal.
+SCORELINE_XG_GAP_THRESHOLD: Final[float] = 0.5
+# Sub-1.0 xG must reach this level before rounding up to one goal (0.68 stays 0).
+SCORELINE_ZERO_BUCKET_ROUND_THRESHOLD: Final[float] = 0.75
+# For xG in [1, 2), [2, 3), ... round up only when strictly above n + this
+# fraction (e.g. 1.51 -> 2, 1.50 -> 1).
+SCORELINE_UPPER_BUCKET_ROUND_FRACTION: Final[float] = 0.5
+
+# ---------------------------------------------------------------------------
 # xG dampening (prediction-time calibration)
 # ---------------------------------------------------------------------------
 # The attack x defense multiplicative model can produce unrealistic xG for

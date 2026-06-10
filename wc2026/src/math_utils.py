@@ -25,6 +25,9 @@ from src.config import (
     FIFA_STRENGTH_EXPONENT,
     MAX_GOALS_FOR_MATRIX,
     REFERENCE_FIFA_POINTS,
+    SCORELINE_UPPER_BUCKET_ROUND_FRACTION,
+    SCORELINE_XG_GAP_THRESHOLD,
+    SCORELINE_ZERO_BUCKET_ROUND_THRESHOLD,
     VENUE_MULT_AWAY,
     VENUE_MULT_HOME,
     VENUE_MULT_NEUTRAL,
@@ -46,6 +49,8 @@ __all__ = [
     "compute_scoreline_matrix",
     "matrix_to_probabilities",
     "dampen_xg",
+    "derive_most_likely_scoreline",
+    "round_goals_from_xg",
 ]
 
 
@@ -332,6 +337,69 @@ def dampen_xg(
         return 0.0
     compressed = xg_raw ** alpha
     return min(compressed, ceiling)
+
+
+def round_goals_from_xg(
+    xg: float,
+    *,
+    zero_bucket_threshold: float = SCORELINE_ZERO_BUCKET_ROUND_THRESHOLD,
+    upper_bucket_fraction: float = SCORELINE_UPPER_BUCKET_ROUND_FRACTION,
+) -> int:
+    """Map expected goals to a whole-number goal count with tiered thresholds.
+
+    Low-scoring teams (xG below 1.0) need a higher bar before rounding up:
+    ``0.68`` stays ``0``, ``0.75`` becomes ``1``. From 1.0 upward, each
+    integer bucket ``[n, n+1)`` rounds up only when xG is strictly above
+    ``n + upper_bucket_fraction`` (e.g. ``1.51 -> 2``, ``1.50 -> 1``).
+    """
+    if xg <= 0:
+        return 0
+    base = int(xg)
+    if base == 0:
+        return 1 if xg >= zero_bucket_threshold else 0
+    fraction = xg - base
+    return base + 1 if fraction > upper_bucket_fraction else base
+
+
+def derive_most_likely_scoreline(
+    xg_a: float,
+    xg_b: float,
+    *,
+    gap_threshold: float = SCORELINE_XG_GAP_THRESHOLD,
+    zero_bucket_threshold: float = SCORELINE_ZERO_BUCKET_ROUND_THRESHOLD,
+    upper_bucket_fraction: float = SCORELINE_UPPER_BUCKET_ROUND_FRACTION,
+) -> tuple[int, int]:
+    """Derive a discrete headline scoreline from expected goals.
+
+    Each team's xG is passed through :func:`round_goals_from_xg`. When the
+    absolute gap between the two expectancies exceeds ``gap_threshold``, the
+    stronger side is shown winning by exactly one goal (e.g. 1.51 vs 0.94 -> 2-1).
+
+    This is a display heuristic only; win/draw/loss probabilities continue
+    to come from the Dixon-Coles Poisson matrix.
+    """
+    rounded_a = round_goals_from_xg(
+        xg_a,
+        zero_bucket_threshold=zero_bucket_threshold,
+        upper_bucket_fraction=upper_bucket_fraction,
+    )
+    rounded_b = round_goals_from_xg(
+        xg_b,
+        zero_bucket_threshold=zero_bucket_threshold,
+        upper_bucket_fraction=upper_bucket_fraction,
+    )
+    gap = abs(xg_a - xg_b)
+
+    if gap > gap_threshold:
+        if xg_a > xg_b:
+            goals_a = max(rounded_a, rounded_b + 1)
+            goals_b = goals_a - 1
+        else:
+            goals_b = max(rounded_b, rounded_a + 1)
+            goals_a = goals_b - 1
+        return max(goals_a, 0), max(goals_b, 0)
+
+    return max(rounded_a, 0), max(rounded_b, 0)
 
 
 def matrix_to_probabilities(matrix: np.ndarray) -> tuple[float, float, float]:

@@ -51,6 +51,8 @@ __all__ = [
     "export_projected_lineups_csv_rows",
     "get_team_id_for_fifa_code",
     "get_player_id_map_for_team",
+    "upsert_fotmob_player_trait_ratings",
+    "get_fotmob_player_trait_ratings",
 ]
 
 logger = logging.getLogger(__name__)
@@ -834,6 +836,94 @@ def get_projected_lineups_snapshot_summary(
         "xi_ok_rows": int(xi_ok["n"]) if xi_ok else 0,
         "by_team_role": [dict(r) for r in rows],
     }
+
+
+def upsert_fotmob_player_trait_ratings(rows: list[dict[str, Any]]) -> int:
+    """Batch UPSERT WC 2026 FotMob player trait ratings (one row per team)."""
+    if not rows:
+        return 0
+    with get_connection() as conn:
+        with conn.transaction():
+            for row in rows:
+                conn.execute(
+                    """
+                    INSERT INTO fotmob_player_trait_ratings (
+                        team, "group", player_name, player_rank_used,
+                        fotmob_id, fotmob_url, compared_to, has_traits,
+                        trait1_name, trait1_pct, trait2_name, trait2_pct,
+                        trait3_name, trait3_pct, trait4_name, trait4_pct,
+                        trait5_name, trait5_pct, trait6_name, trait6_pct,
+                        traits_json, scraped_at, data_source
+                    )
+                    VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s
+                    )
+                    ON CONFLICT (team) DO UPDATE SET
+                        "group" = EXCLUDED."group",
+                        player_name = EXCLUDED.player_name,
+                        player_rank_used = EXCLUDED.player_rank_used,
+                        fotmob_id = EXCLUDED.fotmob_id,
+                        fotmob_url = EXCLUDED.fotmob_url,
+                        compared_to = EXCLUDED.compared_to,
+                        has_traits = EXCLUDED.has_traits,
+                        trait1_name = EXCLUDED.trait1_name,
+                        trait1_pct = EXCLUDED.trait1_pct,
+                        trait2_name = EXCLUDED.trait2_name,
+                        trait2_pct = EXCLUDED.trait2_pct,
+                        trait3_name = EXCLUDED.trait3_name,
+                        trait3_pct = EXCLUDED.trait3_pct,
+                        trait4_name = EXCLUDED.trait4_name,
+                        trait4_pct = EXCLUDED.trait4_pct,
+                        trait5_name = EXCLUDED.trait5_name,
+                        trait5_pct = EXCLUDED.trait5_pct,
+                        trait6_name = EXCLUDED.trait6_name,
+                        trait6_pct = EXCLUDED.trait6_pct,
+                        traits_json = EXCLUDED.traits_json,
+                        scraped_at = EXCLUDED.scraped_at,
+                        data_source = EXCLUDED.data_source
+                    """,
+                    (
+                        row["team"],
+                        row["group"],
+                        row.get("player_name"),
+                        int(row["player_rank_used"]),
+                        row.get("fotmob_id"),
+                        row.get("fotmob_url"),
+                        row.get("compared_to"),
+                        bool(row.get("has_traits")),
+                        row.get("trait1_name"),
+                        row.get("trait1_pct"),
+                        row.get("trait2_name"),
+                        row.get("trait2_pct"),
+                        row.get("trait3_name"),
+                        row.get("trait3_pct"),
+                        row.get("trait4_name"),
+                        row.get("trait4_pct"),
+                        row.get("trait5_name"),
+                        row.get("trait5_pct"),
+                        row.get("trait6_name"),
+                        row.get("trait6_pct"),
+                        row.get("traits_json"),
+                        row.get("scraped_at"),
+                        row.get("data_source", "fotmob_playerData"),
+                    ),
+                )
+    return len(rows)
+
+
+def get_fotmob_player_trait_ratings() -> list[dict[str, Any]]:
+    """Return all FotMob player trait rating rows."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM fotmob_player_trait_ratings
+            ORDER BY "group" ASC, team ASC
+            """
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def export_projected_lineups_csv_rows() -> list[dict[str, Any]]:

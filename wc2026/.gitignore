@@ -1,3 +1,17 @@
+# Environment
 .env
-data/cache/*
-!data/cache/.gitkeep
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# Jupyter
+.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
+
+# Data
+data/cache/
+data/fotmob_cache/

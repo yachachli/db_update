@@ -1,0 +1,145 @@
+﻿group,team,rank,player
+A,Mexico,1,Edson Alvarez
+A,Mexico,2,Gilberto Mora
+A,Mexico,3,Raul Jimenez
+A,South Africa,1,Ronwen Williams
+A,South Africa,2,Lyle Foster
+A,South Africa,3,Teboho Mokoena
+A,South Korea,1,Son Heung-min
+A,South Korea,2,Kim Min-jae
+A,South Korea,3,Lee Kang-in
+A,Czechia,1,Patrik Schick
+A,Czechia,2,Tomas Soucek
+A,Czechia,3,Adam Hlozek
+B,Canada,1,Alphonso Davies
+B,Canada,2,Jonathan David
+B,Canada,3,Stephen Eustaquio
+B,Bosnia and Herzegovina,1,Edin Dzeko
+B,Bosnia and Herzegovina,2,Ermedin Demirovic
+B,Bosnia and Herzegovina,3,Amar Dedic
+B,Qatar,1,Akram Afif
+B,Qatar,2,Almoez Ali
+B,Qatar,3,Hassan Al Haydos
+B,Switzerland,1,Granit Xhaka
+B,Switzerland,2,Manuel Akanji
+B,Switzerland,3,Dan Ndoye
+C,Brazil,1,Vinicius Jr
+C,Brazil,2,Raphinha
+C,Brazil,3,Neymar
+C,Morocco,1,Achraf Hakimi
+C,Morocco,2,Brahim Diaz
+C,Morocco,3,Yassine Bounou
+C,Haiti,1,Jean-Ricner Bellegarde
+C,Haiti,2,Wilson Isidor
+C,Haiti,3,Derrick Etienne Jr.
+C,Scotland,1,Scott McTominay
+C,Scotland,2,Andy Robertson
+C,Scotland,3,John McGinn
+D,United States,1,Christian Pulisic
+D,United States,2,Weston McKennie
+D,United States,3,Folarin Balogun
+D,Paraguay,1,Miguel Almiron
+D,Paraguay,2,Julio Enciso
+D,Paraguay,3,Gustavo Gomez
+D,Australia,1,Mathew Ryan
+D,Australia,2,Jackson Irvine
+D,Australia,3,Nestory Irankunda
+D,Turkiye,1,Arda Guler
+D,Turkiye,2,Hakan Calhanoglu
+D,Turkiye,3,Kenan Yildiz
+E,Germany,1,Florian Wirtz
+E,Germany,2,Jamal Musiala
+E,Germany,3,Joshua Kimmich
+E,Curacao,1,Tahith Chong
+E,Curacao,2,Riechedly Bazoer
+E,Curacao,3,Juninho Bacuna
+E,Ivory Coast,1,Amad Diallo
+E,Ivory Coast,2,Franck Kessie
+E,Ivory Coast,3,Yan Diomande
+E,Ecuador,1,Moises Caicedo
+E,Ecuador,2,Piero Hincapie
+E,Ecuador,3,Willian Pacho
+F,Netherlands,1,Virgil van Dijk
+F,Netherlands,2,Frenkie de Jong
+F,Netherlands,3,Cody Gakpo
+F,Japan,1,Takefusa Kubo
+F,Japan,2,Daichi Kamada
+F,Japan,3,Wataru Endo
+F,Sweden,1,Alexander Isak
+F,Sweden,2,Viktor Gyokeres
+F,Sweden,3,Anthony Elanga
+F,Tunisia,1,Ellyes Skhiri
+F,Tunisia,2,Hannibal Mejbri
+F,Tunisia,3,Montassar Talbi
+G,Belgium,1,Kevin De Bruyne
+G,Belgium,2,Jeremy Doku
+G,Belgium,3,Romelu Lukaku
+G,Egypt,1,Mohamed Salah
+G,Egypt,2,Omar Marmoush
+G,Egypt,3,Trezeguet
+G,Iran,1,Mehdi Taremi
+G,Iran,2,Alireza Jahanbakhsh
+G,Iran,3,Saman Ghoddos
+G,New Zealand,1,Chris Wood
+G,New Zealand,2,Marko Stamenic
+G,New Zealand,3,Liberato Cacace
+H,Spain,1,Lamine Yamal
+H,Spain,2,Pedri
+H,Spain,3,Rodri
+H,Cape Verde,1,Ryan Mendes
+H,Cape Verde,2,Logan Costa
+H,Cape Verde,3,Garry Rodrigues
+H,Saudi Arabia,1,Salem Al-Dawsari
+H,Saudi Arabia,2,Feras Al-Brikan
+H,Saudi Arabia,3,Mohamed Kanno
+H,Uruguay,1,Federico Valverde
+H,Uruguay,2,Darwin Nunez
+H,Uruguay,3,Ronald Araujo
+I,France,1,Kylian Mbappe
+I,France,2,Ousmane Dembele
+I,France,3,Michael Olise
+I,Senegal,1,Sadio Mane
+I,Senegal,2,Nicolas Jackson
+I,Senegal,3,Ismaila Sarr
+I,Iraq,1,Zidane Iqbal
+I,Iraq,2,Aymen Hussein
+I,Iraq,3,Ali Al-Hamadi
+I,Norway,1,Erling Haaland
+I,Norway,2,Martin Odegaard
+I,Norway,3,Alexander Sorloth
+J,Argentina,1,Lionel Messi
+J,Argentina,2,Lautaro Martinez
+J,Argentina,3,Julian Alvarez
+J,Algeria,1,Riyad Mahrez
+J,Algeria,2,Mohamed Amoura
+J,Algeria,3,Amine Gouiri
+J,Austria,1,David Alaba
+J,Austria,2,Marcel Sabitzer
+J,Austria,3,Konrad Laimer
+J,Jordan,1,Mousa Al-Tamari
+J,Jordan,2,Ali Olwan
+J,Jordan,3,Nizar Al-Rashdan
+K,Portugal,1,Cristiano Ronaldo
+K,Portugal,2,Bruno Fernandes
+K,Portugal,3,Vitinha
+K,DR Congo,1,Yoane Wissa
+K,DR Congo,2,Chancel Mbemba
+K,DR Congo,3,Aaron Wan-Bissaka
+K,Uzbekistan,1,Abdukodir Khusanov
+K,Uzbekistan,2,Eldor Shomurodov
+K,Uzbekistan,3,Abbosbek Fayzullaev
+K,Colombia,1,Luis Diaz
+K,Colombia,2,James Rodriguez
+K,Colombia,3,Richard Rios
+L,England,1,Jude Bellingham
+L,England,2,Harry Kane
+L,England,3,Bukayo Saka
+L,Croatia,1,Luka Modric
+L,Croatia,2,Josko Gvardiol
+L,Croatia,3,Mateo Kovacic
+L,Ghana,1,Thomas Partey
+L,Ghana,2,Antoine Semenyo
+L,Ghana,3,Inaki Williams
+L,Panama,1,Adalberto Carrasquilla
+L,Panama,2,Ismael Diaz
+L,Panama,3,Cecilio Waterman

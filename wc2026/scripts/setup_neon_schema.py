@@ -29,6 +29,7 @@ _TABLES = (
     "team_player_ratings",
     "player_ratings_history",
     "projected_lineups_history",
+    "fotmob_player_trait_ratings",
 )
 
 _SCHEMA_STATEMENTS: list[tuple[str, str]] = [
@@ -278,6 +279,33 @@ _SCHEMA_STATEMENTS: list[tuple[str, str]] = [
             computed_at
         FROM projected_lineups_history
         ORDER BY team_code, lineup_role, lineup_slot, snapshot_date DESC
+    """),
+    ("fotmob_player_trait_ratings", """
+        CREATE TABLE IF NOT EXISTS fotmob_player_trait_ratings (
+            team              TEXT PRIMARY KEY,
+            "group"           TEXT NOT NULL,
+            player_name       TEXT,
+            player_rank_used  INTEGER NOT NULL,
+            fotmob_id         BIGINT,
+            fotmob_url        TEXT,
+            compared_to       TEXT,
+            has_traits        BOOLEAN NOT NULL DEFAULT FALSE,
+            trait1_name       TEXT,
+            trait1_pct        INTEGER,
+            trait2_name       TEXT,
+            trait2_pct        INTEGER,
+            trait3_name       TEXT,
+            trait3_pct        INTEGER,
+            trait4_name       TEXT,
+            trait4_pct        INTEGER,
+            trait5_name       TEXT,
+            trait5_pct        INTEGER,
+            trait6_name       TEXT,
+            trait6_pct        INTEGER,
+            traits_json       TEXT,
+            scraped_at        TIMESTAMPTZ,
+            data_source       TEXT NOT NULL DEFAULT 'fotmob_playerData'
+        )
     """),
     ("projected_lineups_csv", """
         CREATE OR REPLACE VIEW projected_lineups_csv AS
