@@ -33,7 +33,7 @@ def main() -> None:
 
         backfill_start = os.getenv("BACKFILL_START")  # YYYYMMDD
         backfill_end = os.getenv("BACKFILL_END")      # YYYYMMDD
-        backfill_days = int(os.getenv("BACKFILL_DAYS", "0"))
+        backfill_days = int(os.getenv("BACKFILL_DAYS") or "0")
         target_date = os.getenv("TARGET_DATE")        # YYYY-MM-DD
 
         # Bootstrap teams+parks once (idempotent — no-op if 30 teams already present)
