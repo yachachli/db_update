@@ -1,7 +1,10 @@
 import asyncio
 import functools
 import itertools
+from collections.abc import Awaitable, Callable
 from datetime import datetime
+
+import asyncpg
 
 from db_update.api import wnba_api
 from db_update.async_caching_client import AsyncCachingClient
@@ -9,6 +12,36 @@ from db_update.db import wnba_db as db
 from db_update.db_pool import DBConnection, DBPool
 from db_update.logger import logger
 from db_update.utils import batch, batch_db, decimal_safe, float_safe, int_safe
+
+
+def _tolerant(
+    task: Callable[[DBConnection], Awaitable[object]], *, label: str
+) -> Callable[[DBConnection], Awaitable[None]]:
+    """Wrap a single upsert so a constraint violation skips that one row instead
+    of aborting the whole `batch_db` gather.
+
+    `wnba_players` carries two competing unique indexes — (player_id) and
+    (name, team_id) — but the upsert only reconciles `ON CONFLICT (player_id)`.
+    When the upstream feed reassigns a player's id (common for early-season
+    rookies), the new id collides with the existing (name, team_id) row and
+    raises UniqueViolationError; the dependent season/game-stats rows then raise
+    ForeignKeyViolationError. Previously a single such row crashed the entire
+    nightly run, freezing the whole WNBA feed for weeks. Skipping the one bad
+    row keeps every other player current.
+    """
+
+    async def run(conn: DBConnection) -> None:
+        try:
+            await task(conn)
+        except (
+            asyncpg.UniqueViolationError,
+            asyncpg.ForeignKeyViolationError,
+        ) as exc:
+            logger.warning(
+                f"skipping WNBA upsert ({label}): {type(exc).__name__}: {exc}"
+            )
+
+    return run
 
 
 async def run(pool: DBPool):
@@ -87,13 +120,16 @@ async def run(pool: DBPool):
     await batch_db(
         pool,
         (
-            functools.partial(
-                db.wnba_player_upsert,
-                name=player.long_name,
-                position=player.pos,
-                team_id=team_abv_to_db_id[player.team],
-                player_id=int_safe(player.player_id),
-                player_pic=player.espn_headshot or None,
+            _tolerant(
+                functools.partial(
+                    db.wnba_player_upsert,
+                    name=player.long_name,
+                    position=player.pos,
+                    team_id=team_abv_to_db_id[player.team],
+                    player_id=int_safe(player.player_id),
+                    player_pic=player.espn_headshot or None,
+                ),
+                label=f"player {player.long_name} ({player.team})",
             )
             for player in unique_players
         ),
@@ -104,7 +140,8 @@ async def run(pool: DBPool):
     await batch_db(
         pool,
         [
-            functools.partial(
+            _tolerant(
+                functools.partial(
                 db.wnba_player_season_stats_upsert,
                 player_id=int(player.player_id),
                 season_id=season_id,
@@ -127,6 +164,8 @@ async def run(pool: DBPool):
                 three_pointers_attempted_per_game=decimal_safe(player.stats.tptfga),
                 free_throws_made_per_game=decimal_safe(player.stats.ftm),
                 free_throws_attempted_per_game=decimal_safe(player.stats.fta),
+                ),
+                label=f"season stats {player.long_name}",
             )
             for player in players_with_stats
         ],
@@ -194,8 +233,11 @@ async def run(pool: DBPool):
         (
             itertools.chain.from_iterable(
                 (
-                    functools.partial(
-                        wnba_player_game_stats_upsert, game_id=game_id, gs=gs
+                    _tolerant(
+                        functools.partial(
+                            wnba_player_game_stats_upsert, game_id=game_id, gs=gs
+                        ),
+                        label=f"game stats {game_id} player {gs.player_id}",
                     )
                     for game_id, gs in games_stats.items()
                 )
