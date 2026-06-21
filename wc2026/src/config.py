@@ -196,6 +196,15 @@ XG_HARD_CEILING: Final[float] = 4.5
 #   into implausible territory.
 # - Both values are tunable. Backtest against historical tournaments to refine.
 
+# Global lift applied to dampened xG at prediction time (1.0 = no change).
+# Use when live tournament scoring runs hotter than qualifier-calibrated xG
+# (e.g. WC 2026 group stage averaging ~3.2 goals/match vs ~2.2 predicted).
+# Applied after dampen_xg; win/draw/loss and O/U all scale with it.
+# Calibrated against the first 33 WC2026 group-stage matches (actual avg 3.18
+# goals/match): 1.25 maximized pre-kickoff O/U accuracy (45% -> 61%) and cut
+# the O/U Brier score (0.278 -> 0.251) while nearly halving goal-total bias.
+TOURNAMENT_GOAL_MULTIPLIER: Final[float] = 1.25
+
 # ---------------------------------------------------------------------------
 # Host dynamic blending (in-tournament)
 # ---------------------------------------------------------------------------

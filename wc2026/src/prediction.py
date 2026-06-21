@@ -11,6 +11,7 @@ aggregation, so no additional venue multiplier is applied here.
 
 from __future__ import annotations
 
+from src import config
 from src.math_utils import (
     compute_scoreline_matrix,
     dampen_xg,
@@ -54,8 +55,8 @@ def predict_match(
     xg_a_raw = rating_a.attack_final * rating_b.defense_final * per_team_baseline
     xg_b_raw = rating_b.attack_final * rating_a.defense_final * per_team_baseline
 
-    xg_a = dampen_xg(xg_a_raw)
-    xg_b = dampen_xg(xg_b_raw)
+    xg_a = dampen_xg(xg_a_raw) * config.TOURNAMENT_GOAL_MULTIPLIER
+    xg_b = dampen_xg(xg_b_raw) * config.TOURNAMENT_GOAL_MULTIPLIER
 
     matrix = compute_scoreline_matrix(xg_a, xg_b)
     prob_a_win, prob_draw, prob_b_win = matrix_to_probabilities(matrix)
