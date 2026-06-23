@@ -62,7 +62,10 @@ VENUE_MULT_HOME: Final[float] = 0.85
 # Host adjustment
 # ---------------------------------------------------------------------------
 # Applied to both attack and defense ratings for the host nations.
-HOST_BONUS: Final[float] = 1.07
+# Raised 1.07 -> 1.12 after the first WC2026 host matches: USA/Mexico/Canada
+# went 5W-1D-0L while the model averaged only ~42% win probability for them,
+# i.e. observed host advantage was materially under-credited at 1.07.
+HOST_BONUS: Final[float] = 1.12
 HOST_TEAM_NAMES: Final[frozenset[str]] = frozenset({"USA", "Canada", "Mexico"})
 
 # ---------------------------------------------------------------------------
