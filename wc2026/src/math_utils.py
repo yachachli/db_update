@@ -48,6 +48,7 @@ __all__ = [
     "dixon_coles_correction",
     "compute_scoreline_matrix",
     "matrix_to_probabilities",
+    "most_likely_scoreline_from_matrix",
     "dampen_xg",
     "derive_most_likely_scoreline",
     "round_goals_from_xg",
@@ -417,3 +418,45 @@ def matrix_to_probabilities(matrix: np.ndarray) -> tuple[float, float, float]:
     prob_draw = float(np.trace(matrix))
     prob_b_win = float(np.triu(matrix, k=1).sum())
     return prob_a_win, prob_draw, prob_b_win
+
+
+def most_likely_scoreline_from_matrix(
+    matrix: np.ndarray,
+    *,
+    outcome: str | None = None,
+) -> tuple[int, int]:
+    """Return the single most probable scoreline straight from the matrix.
+
+    ``matrix[i][j] = P(A scores i, B scores j)`` is the same Dixon-Coles
+    Poisson matrix the win/draw/loss probabilities are derived from, so the
+    headline scoreline is read from the model's own distribution rather than a
+    separate xG-rounding heuristic.
+
+    When ``outcome`` is supplied the search is restricted to the cells that
+    agree with that result, guaranteeing the displayed scoreline never
+    contradicts the percentages:
+
+    - ``"a"``: A-win cells (``i > j``)
+    - ``"d"``: draw cells (``i == j``)
+    - ``"b"``: B-win cells (``j > i``)
+
+    With ``outcome=None`` the global argmax cell is returned. Returns the
+    ``(team_a_goals, team_b_goals)`` of the highest-probability eligible cell.
+    """
+    arr = np.asarray(matrix, dtype=float)
+    rows, cols = arr.shape
+    best: tuple[int, int] = (0, 0)
+    best_p = -1.0
+    for i in range(rows):
+        for j in range(cols):
+            if outcome == "a" and not i > j:
+                continue
+            if outcome == "d" and i != j:
+                continue
+            if outcome == "b" and not j > i:
+                continue
+            p = arr[i, j]
+            if p > best_p:
+                best_p = p
+                best = (i, j)
+    return best

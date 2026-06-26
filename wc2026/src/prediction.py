@@ -15,8 +15,8 @@ from src import config
 from src.math_utils import (
     compute_scoreline_matrix,
     dampen_xg,
-    derive_most_likely_scoreline,
     matrix_to_probabilities,
+    most_likely_scoreline_from_matrix,
 )
 from src.models import MatchPrediction, TeamRating, TournamentBaseline
 
@@ -61,7 +61,18 @@ def predict_match(
     matrix = compute_scoreline_matrix(xg_a, xg_b)
     prob_a_win, prob_draw, prob_b_win = matrix_to_probabilities(matrix)
 
-    most_likely_scoreline = derive_most_likely_scoreline(xg_a, xg_b)
+    # Read the headline scoreline straight from the same matrix, restricted to
+    # the modal win/draw/loss outcome so the score can never contradict the
+    # percentages (e.g. a "1-1" shown next to a 46% favorite).
+    modal_outcome = ("a", "d", "b")[
+        max(
+            range(3),
+            key=(prob_a_win, prob_draw, prob_b_win).__getitem__,
+        )
+    ]
+    most_likely_scoreline = most_likely_scoreline_from_matrix(
+        matrix, outcome=modal_outcome
+    )
 
     return MatchPrediction(
         team_a_id=rating_a.team_id,
