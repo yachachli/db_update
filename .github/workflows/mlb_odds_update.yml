@@ -1,0 +1,41 @@
+name: MLB Odds Update
+
+on:
+  schedule:
+    # Four intraday snapshots (12/16/20/23 UTC) capture line movement across the day,
+    # plus 01 UTC for late West Coast night games. The latest snapshot before first
+    # pitch becomes the closing line for CLV later.
+    - cron: '0 12,16,20,23 * * *'
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+    inputs:
+      target_date:
+        description: 'Single ET slate date (YYYY-MM-DD). Leave blank for today (ET).'
+        required: false
+        default: ''
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        working-directory: mlb_odds_update
+        run: pip install -r requirements.txt
+
+      - name: Run mlb_odds_update
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          TARGET_DATE: ${{ github.event.inputs.target_date }}
+          LOG_LEVEL: INFO
+        run: python -m mlb_odds_update
