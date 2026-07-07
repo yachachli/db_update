@@ -1,0 +1,39 @@
+name: MLB Weather Update
+
+on:
+  schedule:
+    # 12:30 UTC = morning forecast, right after the 11:00 UTC slate sync populates games.
+    - cron: '30 12 * * *'
+    # 21:00 UTC = evening refresh with a fresher forecast before first pitches.
+    - cron: '0 21 * * *'
+  workflow_dispatch:
+    inputs:
+      target_date:
+        description: 'Single ET slate date (YYYY-MM-DD). Leave blank for today (ET).'
+        required: false
+        default: ''
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        working-directory: mlb_weather_update
+        run: pip install -r requirements.txt
+
+      - name: Run mlb_weather_update
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TARGET_DATE: ${{ github.event.inputs.target_date }}
+          LOG_LEVEL: INFO
+        run: python -m mlb_weather_update
