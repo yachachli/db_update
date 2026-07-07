@@ -141,6 +141,44 @@ def upsert_player_stub(engine: Engine, player_id: int, full_name: str) -> None:
         )
 
 
+def upsert_player_full(engine: Engine, person: dict[str, Any]) -> None:
+    """Enrich an existing player row with base /people fields, never clobbering non-NULLs.
+
+    COALESCE(EXCLUDED.x, existing) keeps any value already present — the schedule sync
+    only stubs name, so this fills handedness/position/dates without overwriting data a
+    later results ingestion may have set.
+    """
+    with engine.begin() as conn:
+        conn.execute(
+            text(f"""
+                INSERT INTO {SCHEMA}.players (
+                    player_id, full_name, primary_position, throws, bats,
+                    birth_date, mlb_debut_date
+                )
+                VALUES (
+                    :player_id, :full_name, :primary_position, :throws, :bats,
+                    :birth_date, :mlb_debut_date
+                )
+                ON CONFLICT (player_id) DO UPDATE SET
+                    full_name = EXCLUDED.full_name,
+                    primary_position = COALESCE(EXCLUDED.primary_position, {SCHEMA}.players.primary_position),
+                    throws = COALESCE(EXCLUDED.throws, {SCHEMA}.players.throws),
+                    bats = COALESCE(EXCLUDED.bats, {SCHEMA}.players.bats),
+                    birth_date = COALESCE(EXCLUDED.birth_date, {SCHEMA}.players.birth_date),
+                    mlb_debut_date = COALESCE(EXCLUDED.mlb_debut_date, {SCHEMA}.players.mlb_debut_date)
+            """),
+            {
+                "player_id": person["id"],
+                "full_name": person["fullName"],
+                "primary_position": (person.get("primaryPosition") or {}).get("abbreviation"),
+                "throws": (person.get("pitchHand") or {}).get("code"),
+                "bats": (person.get("batSide") or {}).get("code"),
+                "birth_date": person.get("birthDate"),
+                "mlb_debut_date": person.get("mlbDebutDate"),
+            },
+        )
+
+
 def upsert_game(engine: Engine, schedule_game: dict[str, Any]) -> None:
     game_id = schedule_game["gamePk"]
     game_date = schedule_game.get("officialDate") or schedule_game["gameDate"][:10]
@@ -284,4 +322,64 @@ def sync_games_for_date(engine: Engine, target_date: str) -> dict[str, int]:
         except Exception as e:
             logger.warning("Failed to upsert game %s: %s", game.get("gamePk"), e)
 
-    return {"games": games_synced, "players_stubbed": players_stubbed}
+    probables_enriched, enrich_failures = enrich_probable_pitchers(engine, target_date)
+
+    logger.info(
+        "Games sync for %s — games: %d, players stubbed: %d, "
+        "probable pitchers enriched: %d (failures: %d)",
+        target_date, games_synced, players_stubbed,
+        probables_enriched, enrich_failures,
+    )
+
+    return {
+        "games": games_synced,
+        "players_stubbed": players_stubbed,
+        "probables_enriched": probables_enriched,
+        "probables_enrich_failures": enrich_failures,
+    }
+
+
+def get_probables_needing_enrichment(engine: Engine, target_date: str) -> list[int]:
+    """Player IDs listed as a probable SP (home or away) on target_date whose `throws`
+    is still NULL. The NULL filter makes re-runs / already-enriched dates a no-op."""
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(f"""
+                SELECT DISTINCT p.player_id
+                FROM {SCHEMA}.players p
+                JOIN {SCHEMA}.games g
+                  ON p.player_id IN (g.home_sp_id, g.away_sp_id)
+                WHERE g.game_date = :target_date
+                  AND p.throws IS NULL
+            """),
+            {"target_date": target_date},
+        ).fetchall()
+        return [r.player_id for r in rows]
+
+
+def enrich_probable_pitchers(engine: Engine, target_date: str) -> tuple[int, int]:
+    """Proactively hydrate handedness (and other base person fields) for the date's
+    probable starters, so the model has `throws` before first pitch rather than waiting
+    for results ingestion. Returns (enriched, failures).
+
+    Typically 0–15 lookups/day; serial and polite, reusing the client's retry/backoff.
+    A failed /people lookup logs a warning and is skipped — it never fails the run.
+    """
+    pitcher_ids = get_probables_needing_enrichment(engine, target_date)
+    if not pitcher_ids:
+        return 0, 0
+
+    logger.info("%d probable pitcher(s) on %s need handedness enrichment",
+                len(pitcher_ids), target_date)
+    client = MLBStatsClient()
+    enriched = 0
+    failures = 0
+    for pid in pitcher_ids:
+        try:
+            person = client.get_person(pid)
+            upsert_player_full(engine, person)
+            enriched += 1
+        except Exception as e:
+            failures += 1
+            logger.warning("Failed to enrich probable pitcher %s: %s", pid, e)
+    return enriched, failures

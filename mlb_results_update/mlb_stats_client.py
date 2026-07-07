@@ -1,4 +1,4 @@
-"""MLB Stats API client — minimal subset for mlb_games_update.
+"""MLB Stats API client — minimal subset for mlb_results_update.
 
 Free, public, no auth required. Source: statsapi.mlb.com.
 """
@@ -11,7 +11,7 @@ from typing import Any
 
 import requests
 
-logger = logging.getLogger("mlb_games_update.mlb_stats_client")
+logger = logging.getLogger("mlb_results_update.mlb_stats_client")
 
 BASE_URL = "https://statsapi.mlb.com/api"
 SPORT_ID_MLB = 1
@@ -55,42 +55,38 @@ def _http_get(url: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
 
 
 class MLBStatsClient:
-    """Thin client. No auth, no rate limit handling needed beyond retries."""
+    """No auth required. Only the endpoints this folder needs."""
 
-    def get_teams(self, season: int | None = None) -> list[dict[str, Any]]:
-        params: dict[str, Any] = {"sportId": SPORT_ID_MLB}
-        if season:
-            params["season"] = str(season)
-        payload = _http_get(f"{BASE_URL}/v1/teams", params=params)
-        return payload.get("teams", [])
-
-    def get_venue(self, venue_id: int) -> dict[str, Any]:
-        payload = _http_get(f"{BASE_URL}/v1/venues/{venue_id}")
-        venues = payload.get("venues", [])
-        if not venues:
-            raise HttpError(f"Empty venues for {venue_id}")
-        return venues[0]
-
-    def get_person(self, person_id: int) -> dict[str, Any]:
-        """Base player record: name, throws, bats, position, birth/debut dates."""
-        payload = _http_get(f"{BASE_URL}/v1/people/{person_id}")
-        people = payload.get("people", [])
-        if not people:
-            raise HttpError(f"Empty /people response for {person_id}")
-        return people[0]
-
-    def get_schedule_with_pitchers(self, target_date: str) -> list[dict[str, Any]]:
-        """Date in YYYY-MM-DD format. Returns flat list of game dicts."""
+    def get_schedule(self, target_date: str) -> list[dict[str, Any]]:
+        """All games on target_date (YYYY-MM-DD). Includes status + scores when Final."""
         payload = _http_get(
             f"{BASE_URL}/v1/schedule",
-            params={
-                "sportId": SPORT_ID_MLB,
-                "date": target_date,
-                "hydrate": "probablePitcher,team,venue",
-            },
+            params={"sportId": SPORT_ID_MLB, "date": target_date},
         )
         games: list[dict[str, Any]] = []
         for day in payload.get("dates", []):
             for game in day.get("games", []):
                 games.append(game)
         return games
+
+    def get_box_score(self, game_pk: int) -> dict[str, Any]:
+        """Full box score with per-player batting + pitching stats."""
+        payload = _http_get(f"{BASE_URL}/v1/game/{game_pk}/boxscore")
+        if not isinstance(payload, dict) or "teams" not in payload:
+            raise HttpError(f"Unexpected boxscore shape for game {game_pk}")
+        return payload
+
+    def get_line_score(self, game_pk: int) -> dict[str, Any]:
+        """Compact line score — used for extra_innings detection."""
+        payload = _http_get(f"{BASE_URL}/v1/game/{game_pk}/linescore")
+        if not isinstance(payload, dict):
+            raise HttpError(f"Unexpected linescore shape for game {game_pk}")
+        return payload
+
+    def get_person(self, person_id: int) -> dict[str, Any]:
+        """Player metadata: name, throws, bats, position, debut, birth."""
+        payload = _http_get(f"{BASE_URL}/v1/people/{person_id}")
+        people = payload.get("people", [])
+        if not people:
+            raise HttpError(f"Empty /people response for {person_id}")
+        return people[0]
