@@ -239,6 +239,43 @@ def upsert_game(engine: Engine, schedule_game: dict[str, Any]) -> None:
         )
 
 
+def load_known_park_ids(engine: Engine) -> set[int]:
+    """All park_ids currently in the parks table — used to detect neutral-site venues
+    that need stubbing before a game referencing them can be inserted (games.park_id FK)."""
+    with engine.connect() as conn:
+        rows = conn.execute(text(f"SELECT park_id FROM {SCHEMA}.parks")).fetchall()
+        return {r.park_id for r in rows}
+
+
+def ensure_park(engine: Engine, client: MLBStatsClient, venue: dict[str, Any],
+                known_park_ids: set[int]) -> bool:
+    """Guarantee a game's venue exists in parks so the games.park_id FK is satisfiable.
+
+    2024 includes neutral-site games (Seoul, London, Mexico City, Rickwood, Williamsport)
+    whose venues aren't in the seeded parks table. Rather than let the FK violation skip
+    the game, we stub the venue from /venues/{id} (id, name, coords, timezone; no park
+    factors — downstream treats factor-less parks as league-average). Returns True if a
+    new park was stubbed.
+    """
+    venue_id = venue.get("id")
+    if venue_id is None or venue_id in known_park_ids:
+        return False
+
+    try:
+        venue_full = client.get_venue(venue_id)
+    except Exception as e:
+        # Fall back to the minimal name from the schedule so the game still lands.
+        logger.warning("Could not fetch /venues/%s (%s) for stub: %s — stubbing name only",
+                       venue_id, venue.get("name"), e)
+        venue_full = {"id": venue_id, "name": venue.get("name") or f"Venue {venue_id}"}
+
+    upsert_park(engine, venue_full)
+    known_park_ids.add(venue_id)
+    logger.info("Stubbed neutral-site venue into parks: id=%s name=%r",
+                venue_id, venue_full.get("name"))
+    return True
+
+
 def count_rows(engine: Engine, table: str) -> int:
     """Hardcoded-table-name count helper. Only call with literals."""
     with engine.connect() as conn:
@@ -299,6 +336,23 @@ def sync_games_for_date(engine: Engine, target_date: str) -> dict[str, int]:
     games = client.get_schedule_with_pitchers(target_date)
     logger.info("Fetched %d games for %s", len(games), target_date)
 
+    # Regular season only ('R'). Spring Training ('S'), exhibitions ('E'), All-Star ('A'),
+    # and postseason ('P'/'D'/'L'/'W'/'F') are excluded from training + daily prediction.
+    reg_games = [g for g in games if g.get("gameType") == "R"]
+    filtered_non_reg = len(games) - len(reg_games)
+    if filtered_non_reg:
+        types = sorted({g.get("gameType") for g in games if g.get("gameType") != "R"})
+        logger.info("Filtered %d non-regular-season game(s) on %s (gameType in %s)",
+                    filtered_non_reg, target_date, types)
+    games = reg_games
+
+    # Neutral-site venues (Seoul/London/etc.) must exist in parks before we upsert games.
+    known_park_ids = load_known_park_ids(engine)
+    venues_stubbed = 0
+    for game in games:
+        if ensure_park(engine, client, game.get("venue") or {}, known_park_ids):
+            venues_stubbed += 1
+
     pitcher_ids: dict[int, str] = {}
     for game in games:
         for side in ("home", "away"):
@@ -325,14 +379,16 @@ def sync_games_for_date(engine: Engine, target_date: str) -> dict[str, int]:
     probables_enriched, enrich_failures = enrich_probable_pitchers(engine, target_date)
 
     logger.info(
-        "Games sync for %s — games: %d, players stubbed: %d, "
-        "probable pitchers enriched: %d (failures: %d)",
-        target_date, games_synced, players_stubbed,
+        "Games sync for %s — games: %d, filtered non-reg: %d, venues stubbed: %d, "
+        "players stubbed: %d, probable pitchers enriched: %d (failures: %d)",
+        target_date, games_synced, filtered_non_reg, venues_stubbed, players_stubbed,
         probables_enriched, enrich_failures,
     )
 
     return {
         "games": games_synced,
+        "filtered_non_reg": filtered_non_reg,
+        "venues_stubbed": venues_stubbed,
         "players_stubbed": players_stubbed,
         "probables_enriched": probables_enriched,
         "probables_enrich_failures": enrich_failures,

@@ -5,6 +5,7 @@ Free, public, no auth required. Source: statsapi.mlb.com.
 from __future__ import annotations
 
 import logging
+import os
 import random
 import time
 from typing import Any
@@ -23,6 +24,18 @@ RETRY_STATUSES = (429, 500, 502, 503, 504)
 
 class HttpError(RuntimeError):
     pass
+
+
+def _politeness_sleep() -> None:
+    """Optional per-request pause, enabled only during long backfills via
+    MLB_REQUEST_SLEEP_SEC (set by __main__ in backfill mode). No-op otherwise so the
+    daily forward path stays fast."""
+    try:
+        secs = float(os.getenv("MLB_REQUEST_SLEEP_SEC", "0") or 0)
+    except ValueError:
+        secs = 0.0
+    if secs > 0:
+        time.sleep(secs)
 
 
 def _http_get(url: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -49,6 +62,7 @@ def _http_get(url: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
 
         if not response.ok:
             raise HttpError(f"HTTP {response.status_code} for GET {url}: {response.text[:300]}")
+        _politeness_sleep()
         return response.json()
 
     raise HttpError(f"Exhausted retries for {url}: {last_exc}")

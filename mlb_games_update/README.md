@@ -66,6 +66,16 @@ DATABASE_URL="postgresql://..." BACKFILL_START=20260501 BACKFILL_END=20260515 \
     python -m mlb_games_update
 ```
 
+## Historical backfill behavior
+
+The same code path serves the daily forward run and historical backfills, with a few backfill-aware behaviors:
+
+- **Regular season only.** Games are filtered to `gameType == 'R'`; Spring Training, exhibitions, All-Star, and postseason games are dropped and the filtered count is logged (nothing disappears silently). This applies to the daily path too — we don't predict exhibition games.
+- **Neutral-site venues.** Historical seasons include games at venues not in the seeded `parks` table (Seoul, London, Mexico City, Rickwood Field, Williamsport). Because `games.park_id` is a FK, each unknown venue is auto-stubbed into `parks` from `/venues/{id}` (id, name, coords, timezone — no park factors, so downstream treats it as league-average) and the game is kept. Each stub is logged.
+- **Probable vs. actual starters.** Live/future games use the schedule's `probablePitcher`. Historical dates often have no probable, so games may land with NULL `home_sp_id`/`away_sp_id`; `mlb_results_update` then backfills the **actual** starters from the boxscore (the correct training-time value).
+- **Politeness pacing.** In backfill mode (`BACKFILL_START/END` or `BACKFILL_DAYS`), a per-request sleep (`MLB_REQUEST_SLEEP_SEC`, default 0.4s) is enabled; the daily path stays unthrottled.
+- **Resumability.** A failed date logs and continues; the run prints a list of failed dates at the end. Everything is idempotent, so any range can be safely re-run.
+
 ## Failure handling
 
 - Exits 0 on success, 1 on failure

@@ -36,6 +36,11 @@ def main() -> None:
         backfill_days = int(os.getenv("BACKFILL_DAYS") or "0")
         target_date = os.getenv("TARGET_DATE")        # YYYY-MM-DD
 
+        is_backfill = bool((backfill_start and backfill_end) or backfill_days > 0)
+        if is_backfill:
+            # Per-request politeness pacing, active only for long historical runs.
+            os.environ.setdefault("MLB_REQUEST_SLEEP_SEC", "0.4")
+
         # Bootstrap teams+parks once (idempotent — no-op if 30 teams already present)
         bootstrap_teams_and_parks_if_empty(engine, season=date.today().year)
 
@@ -52,13 +57,21 @@ def main() -> None:
 
             print(f"Processing {len(dates)} dates...")
             total_games = 0
+            failed_dates: list[str] = []
             for i, d in enumerate(dates, 1):
-                result = sync_games_for_date(engine, _to_iso(d))
-                total_games += result["games"]
-                # Polite pause between dates (MLB Stats has no rate limit, but be nice)
+                iso = _to_iso(d)
+                try:
+                    result = sync_games_for_date(engine, iso)
+                    total_games += result["games"]
+                except Exception as e:
+                    # A failed date logs and continues so a multi-week run never aborts.
+                    print(f"  DATE FAILED {iso}: {e}", file=sys.stderr)
+                    failed_dates.append(iso)
                 if i < len(dates):
                     time.sleep(0.5)
             print(f"\nBackfill complete: {total_games} games upserted across {len(dates)} dates")
+            if failed_dates:
+                print(f"{len(failed_dates)} date(s) FAILED: {failed_dates}")
 
         elif backfill_days > 0:
             # Rolling auto-backfill: today + last N days
@@ -67,12 +80,20 @@ def main() -> None:
             dates.reverse()
             print(f"Auto-backfill mode: last {backfill_days} days + today ({len(dates)} dates total)")
             total_games = 0
+            failed_dates = []
             for i, d in enumerate(dates, 1):
-                result = sync_games_for_date(engine, _to_iso(d))
-                total_games += result["games"]
+                iso = _to_iso(d)
+                try:
+                    result = sync_games_for_date(engine, iso)
+                    total_games += result["games"]
+                except Exception as e:
+                    print(f"  DATE FAILED {iso}: {e}", file=sys.stderr)
+                    failed_dates.append(iso)
                 if i < len(dates):
                     time.sleep(0.5)
             print(f"\nAuto-backfill complete: {total_games} games upserted across {len(dates)} dates")
+            if failed_dates:
+                print(f"{len(failed_dates)} date(s) FAILED: {failed_dates}")
 
         else:
             # Single-date mode (TARGET_DATE override, otherwise today)

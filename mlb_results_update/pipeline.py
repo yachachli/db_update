@@ -186,6 +186,37 @@ def bump_game_status_to_final(engine: Engine, game_id: int) -> int:
         return result.rowcount or 0
 
 
+def update_game_starters(
+    engine: Engine,
+    *,
+    game_id: int,
+    home_sp_id: int | None,
+    away_sp_id: int | None,
+) -> int:
+    """Write the ACTUAL starting pitchers back to games.home_sp_id/away_sp_id.
+
+    For historical dates the schedule often has no probablePitcher, so games land with
+    NULL SP ids. The boxscore's first-listed pitcher per side is the real starter — the
+    correct training-time value. We overwrite whatever probable was there (actuals win),
+    but COALESCE guards against a missing side. Players are already stubbed (FK safe).
+    Returns rows changed (0 or 1).
+    """
+    if home_sp_id is None and away_sp_id is None:
+        return 0
+    with engine.begin() as conn:
+        result = conn.execute(
+            text(f"""
+                UPDATE {SCHEMA}.games SET
+                    home_sp_id = COALESCE(:home_sp_id, home_sp_id),
+                    away_sp_id = COALESCE(:away_sp_id, away_sp_id),
+                    updated_at = NOW()
+                WHERE game_id = :game_id
+            """),
+            {"game_id": game_id, "home_sp_id": home_sp_id, "away_sp_id": away_sp_id},
+        )
+        return result.rowcount or 0
+
+
 def upsert_pitcher_game_log(
     engine: Engine,
     *,
@@ -402,6 +433,15 @@ def sync_results_for_date(engine: Engine, target_date: str) -> dict[str, int]:
     schedule = client.get_schedule(target_date)
     logger.info("Fetched %d games for %s", len(schedule), target_date)
 
+    # Regular season only ('R') — no Spring Training, exhibitions, All-Star, or postseason.
+    reg_schedule = [g for g in schedule if g.get("gameType") == "R"]
+    filtered_non_reg = len(schedule) - len(reg_schedule)
+    if filtered_non_reg:
+        types = sorted({g.get("gameType") for g in schedule if g.get("gameType") != "R"})
+        logger.info("Filtered %d non-regular-season game(s) on %s (gameType in %s)",
+                    filtered_non_reg, target_date, types)
+    schedule = reg_schedule
+
     final_games = [g for g in schedule if (g.get("status") or {}).get("abstractGameState") == "Final"]
     non_final = len(schedule) - len(final_games)
     if non_final:
@@ -412,6 +452,7 @@ def sync_results_for_date(engine: Engine, target_date: str) -> dict[str, int]:
     team_logs_written = 0
     pitchers_enriched = 0
     statuses_bumped = 0
+    starters_written = 0
     f5_computed = 0
     f5_skipped_short = 0
     pitcher_ids_seen: set[int] = set()
@@ -464,6 +505,7 @@ def sync_results_for_date(engine: Engine, target_date: str) -> dict[str, int]:
             statuses_bumped += bump_game_status_to_final(engine, game_pk)
 
             # --- box score: pitchers + team batting per side ---
+            actual_starters: dict[str, int | None] = {"home": None, "away": None}
             for side in ("home", "away"):
                 team_side = box["teams"][side]
                 team_id = team_side["team"]["id"]
@@ -474,6 +516,7 @@ def sync_results_for_date(engine: Engine, target_date: str) -> dict[str, int]:
                 # Pitchers for this side
                 pitcher_ids_in_order: list[int] = team_side.get("pitchers", [])
                 players_block = team_side.get("players", {})
+                actual_starters[side] = pitcher_ids_in_order[0] if pitcher_ids_in_order else None
 
                 for idx, pid in enumerate(pitcher_ids_in_order):
                     pitcher_ids_seen.add(pid)
@@ -523,6 +566,15 @@ def sync_results_for_date(engine: Engine, target_date: str) -> dict[str, int]:
                 )
                 team_logs_written += 1
 
+            # Backfill the real starters onto the game (historical rows often have NULL SP
+            # because no probable was published). Actuals are the training-time truth.
+            starters_written += update_game_starters(
+                engine,
+                game_id=game_pk,
+                home_sp_id=actual_starters["home"],
+                away_sp_id=actual_starters["away"],
+            )
+
         except Exception as e:
             logger.warning("Failed to ingest game %s: %s", game_pk, e)
 
@@ -539,19 +591,22 @@ def sync_results_for_date(engine: Engine, target_date: str) -> dict[str, int]:
 
     logger.info(
         "Results for %s — outcomes: %d, pitcher logs: %d, team logs: %d, "
-        "statuses bumped to Final: %d, pitchers enriched: %d, "
-        "F5 computed: %d (skipped short games: %d)",
+        "starters written to games: %d, statuses bumped to Final: %d, pitchers enriched: %d, "
+        "F5 computed: %d (skipped short games: %d), filtered non-reg: %d",
         target_date, outcomes_written, pitcher_logs_written, team_logs_written,
-        statuses_bumped, pitchers_enriched, f5_computed, f5_skipped_short,
+        starters_written, statuses_bumped, pitchers_enriched, f5_computed, f5_skipped_short,
+        filtered_non_reg,
     )
 
     return {
         "outcomes": outcomes_written,
         "pitcher_logs": pitcher_logs_written,
         "team_logs": team_logs_written,
+        "starters_written": starters_written,
         "pitchers_enriched": pitchers_enriched,
         "statuses_bumped": statuses_bumped,
         "f5_computed": f5_computed,
         "f5_skipped_short": f5_skipped_short,
         "games_skipped_non_final": non_final,
+        "filtered_non_reg": filtered_non_reg,
     }

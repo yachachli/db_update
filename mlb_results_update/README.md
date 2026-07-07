@@ -75,6 +75,16 @@ DATABASE_URL="postgresql://..." BACKFILL_START=20260401 BACKFILL_END=20260430 \
     python -m mlb_results_update
 ```
 
+## Historical backfill behavior
+
+The same code path serves the nightly forward run and historical backfills, with a few backfill-aware behaviors:
+
+- **Regular season only.** Games are filtered to `gameType == 'R'` before processing; the filtered (Spring Training / exhibition / All-Star / postseason) count is logged.
+- **Actual starters written back.** For every Final game, the boxscore's first-listed pitcher per side (the real starter) is written to `games.home_sp_id`/`away_sp_id`. This fills historical rows that landed with NULL SP (no probable published) — actual starters are the correct training-time value. Live games use probables (set by `mlb_games_update`); historical games end up with actuals.
+- **F5 + linescore.** Runs across innings 1–5 are computed from the linescore and stored (`home_runs_f5`/`away_runs_f5`, generated `total_runs_f5`, raw `linescore` JSONB). Rain-shortened/suspended games with fewer than 5 recorded innings leave F5 NULL and are logged.
+- **Politeness pacing.** In backfill mode (`BACKFILL_START/END` or `BACKFILL_DAYS`), a per-request sleep (`MLB_REQUEST_SLEEP_SEC`, default 0.4s) is enabled; the nightly path stays unthrottled.
+- **Resumability.** A failed date logs and continues; the run prints a list of failed dates at the end. All writes are idempotent, so any range can be safely re-run.
+
 ## Failure handling
 
 - Exits 0 on success, 1 on failure
