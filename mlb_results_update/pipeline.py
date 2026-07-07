@@ -11,6 +11,7 @@ tables. When the propgpt_mlb schema changes, update sibling folders too.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 from typing import Any
@@ -78,6 +79,27 @@ def _safe_int(v: Any) -> int | None:
         return None
 
 
+def compute_f5_runs(innings: list[dict[str, Any]]) -> tuple[int | None, int | None]:
+    """Sum home/away runs across innings 1–5 from an MLB Stats linescore innings array.
+
+    Returns (home_runs_f5, away_runs_f5), or (None, None) if fewer than 5 innings are
+    recorded (rain-shortened / suspended game) — the caller logs and stores NULLs rather
+    than guessing. A missing half-inning entry (e.g. home didn't bat) counts as 0 runs.
+    """
+    by_num: dict[int, dict[str, Any]] = {}
+    for inning in innings:
+        num = _safe_int(inning.get("num"))
+        if num is not None:
+            by_num[num] = inning
+
+    if not all(n in by_num for n in range(1, 6)):
+        return None, None
+
+    home_f5 = sum((_safe_int((by_num[n].get("home") or {}).get("runs")) or 0) for n in range(1, 6))
+    away_f5 = sum((_safe_int((by_num[n].get("away") or {}).get("runs")) or 0) for n in range(1, 6))
+    return home_f5, away_f5
+
+
 def count_rows(engine: Engine, table: str) -> int:
     """Hardcoded-table-name count helper. Only call with literals."""
     with engine.connect() as conn:
@@ -107,20 +129,30 @@ def upsert_outcome(
     away_score: int,
     extra_innings: bool,
     final_innings: float,
+    home_runs_f5: int | None = None,
+    away_runs_f5: int | None = None,
+    linescore: list[dict[str, Any]] | None = None,
 ) -> None:
-    """total_runs and home_won are GENERATED columns — do not write them."""
+    """total_runs, home_won and total_runs_f5 are GENERATED columns — do not write them."""
     with engine.begin() as conn:
         conn.execute(
             text(f"""
                 INSERT INTO {SCHEMA}.outcomes (
-                    game_id, home_score, away_score, extra_innings, final_innings
+                    game_id, home_score, away_score, extra_innings, final_innings,
+                    home_runs_f5, away_runs_f5, linescore
                 )
-                VALUES (:game_id, :home_score, :away_score, :extra_innings, :final_innings)
+                VALUES (
+                    :game_id, :home_score, :away_score, :extra_innings, :final_innings,
+                    :home_runs_f5, :away_runs_f5, CAST(:linescore AS JSONB)
+                )
                 ON CONFLICT (game_id) DO UPDATE SET
                     home_score = EXCLUDED.home_score,
                     away_score = EXCLUDED.away_score,
                     extra_innings = EXCLUDED.extra_innings,
                     final_innings = EXCLUDED.final_innings,
+                    home_runs_f5 = EXCLUDED.home_runs_f5,
+                    away_runs_f5 = EXCLUDED.away_runs_f5,
+                    linescore = EXCLUDED.linescore,
                     recorded_at = NOW()
             """),
             {
@@ -129,6 +161,9 @@ def upsert_outcome(
                 "away_score": away_score,
                 "extra_innings": extra_innings,
                 "final_innings": final_innings,
+                "home_runs_f5": home_runs_f5,
+                "away_runs_f5": away_runs_f5,
+                "linescore": json.dumps(linescore) if linescore is not None else None,
             },
         )
 
@@ -377,6 +412,8 @@ def sync_results_for_date(engine: Engine, target_date: str) -> dict[str, int]:
     team_logs_written = 0
     pitchers_enriched = 0
     statuses_bumped = 0
+    f5_computed = 0
+    f5_skipped_short = 0
     pitcher_ids_seen: set[int] = set()
 
     for game in final_games:
@@ -397,6 +434,18 @@ def sync_results_for_date(engine: Engine, target_date: str) -> dict[str, int]:
             extra_innings = current_inning > scheduled_innings
             final_innings_val = float(current_inning)
 
+            # First-5-innings actuals + raw per-inning linescore (stored regardless).
+            innings = line.get("innings") or []
+            home_f5, away_f5 = compute_f5_runs(innings)
+            if home_f5 is None:
+                logger.warning(
+                    "Game %s: only %d inning(s) recorded (<5) — leaving F5 NULL",
+                    game_pk, len(innings),
+                )
+                f5_skipped_short += 1
+            else:
+                f5_computed += 1
+
             upsert_outcome(
                 engine,
                 game_id=game_pk,
@@ -404,6 +453,9 @@ def sync_results_for_date(engine: Engine, target_date: str) -> dict[str, int]:
                 away_score=away_score,
                 extra_innings=extra_innings,
                 final_innings=final_innings_val,
+                home_runs_f5=home_f5,
+                away_runs_f5=away_f5,
+                linescore=innings,
             )
             outcomes_written += 1
 
@@ -487,9 +539,10 @@ def sync_results_for_date(engine: Engine, target_date: str) -> dict[str, int]:
 
     logger.info(
         "Results for %s — outcomes: %d, pitcher logs: %d, team logs: %d, "
-        "statuses bumped to Final: %d, pitchers enriched: %d",
+        "statuses bumped to Final: %d, pitchers enriched: %d, "
+        "F5 computed: %d (skipped short games: %d)",
         target_date, outcomes_written, pitcher_logs_written, team_logs_written,
-        statuses_bumped, pitchers_enriched,
+        statuses_bumped, pitchers_enriched, f5_computed, f5_skipped_short,
     )
 
     return {
@@ -498,5 +551,7 @@ def sync_results_for_date(engine: Engine, target_date: str) -> dict[str, int]:
         "team_logs": team_logs_written,
         "pitchers_enriched": pitchers_enriched,
         "statuses_bumped": statuses_bumped,
+        "f5_computed": f5_computed,
+        "f5_skipped_short": f5_skipped_short,
         "games_skipped_non_final": non_final,
     }
