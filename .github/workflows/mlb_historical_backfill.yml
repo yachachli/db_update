@@ -1,0 +1,67 @@
+name: MLB Historical Backfill
+
+# Long-running manual backfill for multi-month date ranges.
+# Use workflow_dispatch with BACKFILL_START/END (YYYYMMDD).
+# Default timeout is 6 hours — enough for a full season of results.
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'Which package to run'
+        required: true
+        type: choice
+        options:
+          - games
+          - results
+          - both
+      backfill_start:
+        description: 'Range start (YYYYMMDD)'
+        required: true
+      backfill_end:
+        description: 'Range end (YYYYMMDD)'
+        required: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install games dependencies
+        if: inputs.package == 'games' || inputs.package == 'both'
+        working-directory: mlb_games_update
+        run: pip install -r requirements.txt
+
+      - name: Install results dependencies
+        if: inputs.package == 'results' || inputs.package == 'both'
+        working-directory: mlb_results_update
+        run: pip install -r requirements.txt
+
+      - name: Run mlb_games_update
+        if: inputs.package == 'games' || inputs.package == 'both'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BACKFILL_START: ${{ github.event.inputs.backfill_start }}
+          BACKFILL_END: ${{ github.event.inputs.backfill_end }}
+          MLB_REQUEST_SLEEP_SEC: '0.15'
+          LOG_LEVEL: INFO
+        run: python -m mlb_games_update
+
+      - name: Run mlb_results_update
+        if: inputs.package == 'results' || inputs.package == 'both'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BACKFILL_START: ${{ github.event.inputs.backfill_start }}
+          BACKFILL_END: ${{ github.event.inputs.backfill_end }}
+          MLB_REQUEST_SLEEP_SEC: '0.15'
+          LOG_LEVEL: INFO
+        run: python -m mlb_results_update
