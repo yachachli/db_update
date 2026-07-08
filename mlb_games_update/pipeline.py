@@ -29,6 +29,19 @@ logging.basicConfig(
 # SET search_path doesn't reliably persist across transactions.
 SCHEMA = "propgpt_mlb"
 
+# libpq connection args. TCP keepalives let the OS detect a dead/black-holed socket in
+# tens of seconds instead of blocking indefinitely (the cause of multi-hour hangs during
+# a long backfill on a flaky network); connect_timeout bounds the initial dial.
+# NOTE: no server-side `options` (e.g. statement_timeout) — Neon's pooled PgBouncer
+# endpoint rejects startup `options`; keepalives are the real anti-hang fix regardless.
+_CONNECT_ARGS = {
+    "connect_timeout": 10,
+    "keepalives": 1,
+    "keepalives_idle": 30,
+    "keepalives_interval": 10,
+    "keepalives_count": 3,
+}
+
 
 # ---------------------------------------------------------------------------
 # Engine
@@ -37,7 +50,8 @@ SCHEMA = "propgpt_mlb"
 def get_engine() -> Engine:
     """Build a SQLAlchemy Engine pointed at Neon.
 
-    Uses pool_pre_ping to handle Neon's idle-connection drops gracefully.
+    Uses pool_pre_ping + short pool_recycle + TCP keepalives to survive Neon's
+    idle-connection drops and flaky networks during long backfills.
     """
     url = os.getenv("DATABASE_URL")
     if not url:
@@ -48,7 +62,8 @@ def get_engine() -> Engine:
     if url.startswith("postgresql://") and "+" not in url.split("://", 1)[0]:
         url = url.replace("postgresql://", "postgresql+psycopg://", 1)
 
-    return create_engine(url, pool_pre_ping=True)
+    return create_engine(url, pool_pre_ping=True, pool_recycle=300,
+                         connect_args=_CONNECT_ARGS)
 
 
 # ---------------------------------------------------------------------------

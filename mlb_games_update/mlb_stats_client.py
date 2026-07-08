@@ -16,10 +16,16 @@ logger = logging.getLogger("mlb_games_update.mlb_stats_client")
 
 BASE_URL = "https://statsapi.mlb.com/api"
 SPORT_ID_MLB = 1
-HTTP_TIMEOUT_SEC = 15.0
+# (connect timeout, read timeout). A bounded connect timeout prevents indefinite hangs
+# on a black-holed socket during long backfills.
+HTTP_TIMEOUT_SEC = (5.0, 20.0)
 HTTP_MAX_RETRIES = 4
 HTTP_BACKOFF_BASE_SEC = 1.0
 RETRY_STATUSES = (429, 500, 502, 503, 504)
+
+# Reused connection pool (keep-alive) — far fewer TLS handshakes than a fresh
+# connection per request, which is where connection-abort errors tend to cluster.
+_SESSION = requests.Session()
 
 
 class HttpError(RuntimeError):
@@ -42,7 +48,7 @@ def _http_get(url: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
     last_exc: Exception | None = None
     for attempt in range(1, HTTP_MAX_RETRIES + 1):
         try:
-            response = requests.get(url, params=params, timeout=HTTP_TIMEOUT_SEC)
+            response = _SESSION.get(url, params=params, timeout=HTTP_TIMEOUT_SEC)
         except requests.RequestException as e:
             last_exc = e
             if attempt < HTTP_MAX_RETRIES:

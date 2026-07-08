@@ -22,6 +22,19 @@ from .mlb_stats_client import MLBStatsClient
 
 SCHEMA = "propgpt_mlb"
 
+# libpq connection args. TCP keepalives let the OS detect a dead/black-holed socket in
+# tens of seconds instead of blocking indefinitely (the cause of multi-hour hangs during
+# a long backfill on a flaky network); connect_timeout bounds the initial dial.
+# NOTE: no server-side `options` (e.g. statement_timeout) — Neon's pooled PgBouncer
+# endpoint rejects startup `options`; keepalives are the real anti-hang fix regardless.
+_CONNECT_ARGS = {
+    "connect_timeout": 10,
+    "keepalives": 1,
+    "keepalives_idle": 30,
+    "keepalives_interval": 10,
+    "keepalives_count": 3,
+}
+
 logger = logging.getLogger("mlb_results_update.pipeline")
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO").upper(),
@@ -42,7 +55,8 @@ def get_engine() -> Engine:
     if url.startswith("postgresql://") and "+" not in url.split("://", 1)[0]:
         url = url.replace("postgresql://", "postgresql+psycopg://", 1)
 
-    return create_engine(url, pool_pre_ping=True)
+    return create_engine(url, pool_pre_ping=True, pool_recycle=300,
+                         connect_args=_CONNECT_ARGS)
 
 
 # ---------------------------------------------------------------------------
@@ -77,6 +91,39 @@ def _safe_int(v: Any) -> int | None:
         return int(v)
     except (TypeError, ValueError):
         return None
+
+
+def extract_final_scores(
+    game: dict[str, Any],
+    line: dict[str, Any],
+    box: dict[str, Any],
+) -> tuple[int | None, int | None]:
+    """Resolve final home/away runs with fallbacks.
+
+    The plain schedule occasionally omits `teams.home/away.score` even for Final games,
+    which previously caused the game to be skipped (no outcome row). We fall back to the
+    linescore's team runs, then the boxscore's team batting runs, before giving up.
+    """
+    hs = game["teams"]["home"].get("score")
+    as_ = game["teams"]["away"].get("score")
+    if hs is not None and as_ is not None:
+        return _safe_int(hs), _safe_int(as_)
+
+    lt = line.get("teams") or {}
+    hs = (lt.get("home") or {}).get("runs")
+    as_ = (lt.get("away") or {}).get("runs")
+    if hs is not None and as_ is not None:
+        return _safe_int(hs), _safe_int(as_)
+
+    try:
+        hs = box["teams"]["home"]["teamStats"]["batting"].get("runs")
+        as_ = box["teams"]["away"]["teamStats"]["batting"].get("runs")
+        if hs is not None and as_ is not None:
+            return _safe_int(hs), _safe_int(as_)
+    except (KeyError, TypeError):
+        pass
+
+    return None, None
 
 
 def compute_f5_runs(innings: list[dict[str, Any]]) -> tuple[int | None, int | None]:
@@ -464,10 +511,9 @@ def sync_results_for_date(engine: Engine, target_date: str) -> dict[str, int]:
             line = client.get_line_score(game_pk)
 
             # --- outcome ---
-            home_score = game["teams"]["home"].get("score")
-            away_score = game["teams"]["away"].get("score")
+            home_score, away_score = extract_final_scores(game, line, box)
             if home_score is None or away_score is None:
-                logger.warning("Game %s has Final status but missing scores — skipping", game_pk)
+                logger.warning("Game %s Final but no score in schedule/linescore/boxscore — skipping", game_pk)
                 continue
 
             scheduled_innings = _safe_int(line.get("scheduledInnings")) or 9
