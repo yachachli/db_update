@@ -46,14 +46,36 @@ Writes upsert on `UNIQUE (game_id, book, segment, snapshot_time)`. Within a sing
 
 If two games share date + teams, the event is matched to the game whose scheduled start is closest to the event's `commence_time`. If that can't be decided, the event is skipped with a warning rather than guessed.
 
+## Historical backfill (Track B)
+
+Closing lines for past seasons via The Odds API historical endpoint (paid plan required):
+
+```bash
+# 2024 season (~185 slate days, ~30 credits/day for full-game only)
+DATABASE_URL="..." ODDS_API_KEY="..." \
+  BACKFILL_START=20240320 BACKFILL_END=20240930 \
+  python -m mlb_odds_update
+```
+
+| Env var | Purpose |
+|---|---|
+| `BACKFILL_START` / `BACKFILL_END` | YYYYMMDD range (ET slate dates) |
+| `INCLUDE_F5` | `true` to also fetch F5 markets (+30 credits per matched game) |
+| `ODDS_REQUEST_SLEEP_SEC` | Pause between dates (default 1.0) |
+
+Rows are written with `is_closing = TRUE`. Dates that already have closing odds for all games are skipped automatically.
+
+GitHub Actions: `.github/workflows/mlb_historical_odds_backfill.yml` (manual dispatch).
+
 ## Operation modes
 
 | Mode | Env vars | Use case |
 |---|---|---|
-| Single date | `TARGET_DATE=YYYY-MM-DD` (ET slate date) | Test / re-snapshot a specific date |
-| Default | (none) | Today (US/Eastern) |
+| Single date (live) | `TARGET_DATE=YYYY-MM-DD` (ET slate date) | Test / re-snapshot a specific date |
+| Default (live) | (none) | Today (US/Eastern) |
+| Historical backfill | `BACKFILL_START=YYYYMMDD`, `BACKFILL_END=YYYYMMDD` | Closing lines for past seasons |
 
-No historical backfill here — The Odds API historical endpoint is a separate later step.
+No historical backfill in the live cron — use `BACKFILL_START`/`BACKFILL_END` mode or the GHA workflow instead.
 
 ## Schedule
 

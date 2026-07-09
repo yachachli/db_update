@@ -112,3 +112,47 @@ class OddsAPIClient:
         if not isinstance(payload, dict):
             raise OddsApiError(f"Unexpected event-odds shape for {event_id}: {type(payload).__name__}")
         return payload
+
+    def get_historical_odds(self, date_iso: str) -> dict[str, Any]:
+        """Bulk historical snapshot for full-game markets on a given timestamp.
+
+        date_iso must be ISO8601 (e.g. 2024-06-15T21:00:00Z). YYYY-MM-DD is expanded
+        to noon UTC by the caller. Returns {timestamp, data: [events...], ...}.
+        """
+        payload = self._get(
+            f"/historical/sports/{SPORT_KEY}/odds",
+            {
+                "regions": self.regions,
+                "markets": ",".join(FEATURED_MARKETS),
+                "oddsFormat": self.odds_format,
+                "date": date_iso,
+            },
+        )
+        if not isinstance(payload, dict):
+            raise OddsApiError(
+                f"Unexpected historical-odds shape: {type(payload).__name__}"
+            )
+        return payload
+
+    def get_historical_event_odds(self, event_id: str, date_iso: str) -> dict[str, Any]:
+        """Historical per-event odds (used for F5 period markets)."""
+        payload = self._get(
+            f"/historical/sports/{SPORT_KEY}/events/{event_id}/odds",
+            {
+                "regions": self.regions,
+                "markets": ",".join(F5_MARKETS),
+                "oddsFormat": self.odds_format,
+                "date": date_iso,
+            },
+        )
+        if not isinstance(payload, dict):
+            raise OddsApiError(
+                f"Unexpected historical event-odds shape for {event_id}: "
+                f"{type(payload).__name__}"
+            )
+        data = payload.get("data")
+        if isinstance(data, dict):
+            return data
+        if isinstance(payload, dict) and payload.get("bookmakers") is not None:
+            return payload
+        raise OddsApiError(f"Historical event-odds for {event_id} missing data block")

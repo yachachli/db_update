@@ -14,7 +14,8 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import date, datetime, timezone
+import time
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -39,6 +40,11 @@ ET_ZONE = ZoneInfo("America/New_York")
 # normalise it to `caesars` before the allowlist check and storage.
 BOOKMAKER_ALLOWLIST = {"draftkings", "fanduel", "betmgm", "caesars"}
 BOOK_KEY_ALIASES = {"williamhill_us": "caesars"}
+
+# The Odds API full names that differ from propgpt_mlb.teams.name
+TEAM_NAME_ALIASES = {
+    "Oakland Athletics": "Athletics",
+}
 
 # Per-segment market keys. Full-game markets come from the bulk endpoint; the F5
 # variants are game-period markets fetched per event.
@@ -111,7 +117,11 @@ def build_team_lookup(engine: Engine) -> dict[str, int]:
     """Map full team name ("Seattle Mariners") -> team_id. Built once per run."""
     with engine.connect() as conn:
         rows = conn.execute(text(f"SELECT team_id, name FROM {SCHEMA}.teams")).fetchall()
-    return {r.name: r.team_id for r in rows}
+    lookup = {r.name: r.team_id for r in rows}
+    for api_name, db_name in TEAM_NAME_ALIASES.items():
+        if db_name in lookup:
+            lookup[api_name] = lookup[db_name]
+    return lookup
 
 
 def get_games_for_date(engine: Engine, target_date: date) -> list[dict[str, Any]]:
@@ -255,24 +265,28 @@ def upsert_odds_snapshot(
     snapshot_time: datetime,
     odds_event_id: str | None,
     odds: dict[str, Any],
+    is_closing: bool = False,
 ) -> None:
     with engine.begin() as conn:
         conn.execute(
             text(f"""
                 INSERT INTO {SCHEMA}.odds_snapshots (
                     game_id, book, segment, snapshot_time, odds_event_id,
+                    is_closing,
                     total_line, over_odds, under_odds,
                     ml_home, ml_away,
                     rl_home_spread, rl_home_odds, rl_away_odds
                 )
                 VALUES (
                     :game_id, :book, :segment, :snapshot_time, :odds_event_id,
+                    :is_closing,
                     :total_line, :over_odds, :under_odds,
                     :ml_home, :ml_away,
                     :rl_home_spread, :rl_home_odds, :rl_away_odds
                 )
                 ON CONFLICT (game_id, book, segment, snapshot_time) DO UPDATE SET
                     odds_event_id = EXCLUDED.odds_event_id,
+                    is_closing = EXCLUDED.is_closing,
                     total_line = EXCLUDED.total_line,
                     over_odds = EXCLUDED.over_odds,
                     under_odds = EXCLUDED.under_odds,
@@ -288,6 +302,7 @@ def upsert_odds_snapshot(
                 "segment": segment,
                 "snapshot_time": snapshot_time,
                 "odds_event_id": odds_event_id,
+                "is_closing": is_closing,
                 **odds,
             },
         )
@@ -317,6 +332,7 @@ def _upsert_book_segment(
     snapshot_time: datetime,
     home_name: str,
     away_name: str,
+    is_closing: bool = False,
 ) -> int:
     """Upsert one segment's rows for all allowlisted books of an event. Returns row count."""
     written = 0
@@ -335,6 +351,7 @@ def _upsert_book_segment(
             snapshot_time=snapshot_time,
             odds_event_id=event_id,
             odds=odds,
+            is_closing=is_closing,
         )
         written += 1
     return written
@@ -449,4 +466,255 @@ def sync_odds_for_date(engine: Engine, target_date: date) -> dict[str, Any]:
         "games_without_f5": games_without_f5,
         "credits_used": client.requests_used,
         "credits_remaining": client.requests_remaining,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Historical backfill (The Odds API /historical/... endpoints)
+# ---------------------------------------------------------------------------
+
+def compute_historical_snapshot_time(target_date: date, games: list[dict[str, Any]]) -> datetime:
+    """Pick a pre-first-pitch timestamp for a slate date's bulk historical query.
+
+    Uses the earliest scheduled start minus 15 minutes when times are known;
+    otherwise falls back to 5pm US/Eastern (typical pre-game window).
+    """
+    starts: list[datetime] = []
+    for g in games:
+        start = g.get("game_time_utc")
+        if start is None:
+            continue
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=timezone.utc)
+        starts.append(start)
+
+    if starts:
+        earliest = min(starts) - timedelta(minutes=15)
+        return earliest.astimezone(timezone.utc)
+
+    fallback = datetime(
+        target_date.year,
+        target_date.month,
+        target_date.day,
+        17,
+        0,
+        tzinfo=ET_ZONE,
+    )
+    return fallback.astimezone(timezone.utc)
+
+
+def count_games_with_closing_odds(engine: Engine, target_date: date) -> int:
+    with engine.connect() as conn:
+        row = conn.execute(
+            text(f"""
+                SELECT COUNT(DISTINCT g.game_id) AS n
+                FROM {SCHEMA}.games g
+                JOIN {SCHEMA}.odds_snapshots o ON g.game_id = o.game_id
+                WHERE g.game_date = :d
+                  AND o.segment = 'full_game'
+                  AND o.is_closing = TRUE
+                  AND o.total_line IS NOT NULL
+            """),
+            {"d": target_date},
+        ).fetchone()
+    return int(row.n) if row else 0
+
+
+def sync_historical_odds_for_date(
+    engine: Engine,
+    target_date: date,
+    *,
+    include_f5: bool = False,
+) -> dict[str, Any]:
+    """Backfill closing full-game odds (and optional F5) for one ET slate date."""
+    client = OddsAPIClient(os.getenv("ODDS_API_KEY", ""))
+
+    team_lookup = build_team_lookup(engine)
+    games = get_games_for_date(engine, target_date)
+    if not games:
+        logger.info("No games in DB for %s — skipping", target_date)
+        return {"skipped": True, "reason": "no_games", "target_date": str(target_date)}
+
+    games_by_teams: dict[tuple[int, int], list[dict[str, Any]]] = {}
+    for g in games:
+        games_by_teams.setdefault((g["home_team_id"], g["away_team_id"]), []).append(g)
+
+    snapshot_dt = compute_historical_snapshot_time(target_date, games)
+    snapshot_iso = snapshot_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    try:
+        payload = client.get_historical_odds(snapshot_iso)
+    except Exception as e:
+        logger.error("Historical odds fetch failed for %s (%s): %s", target_date, snapshot_iso, e)
+        return {
+            "skipped": False,
+            "failed": True,
+            "target_date": str(target_date),
+            "snapshot_iso": snapshot_iso,
+            "error": str(e),
+        }
+
+    api_timestamp = payload.get("timestamp")
+    if api_timestamp:
+        snapshot_time = datetime.fromisoformat(api_timestamp.replace("Z", "+00:00"))
+    else:
+        snapshot_time = snapshot_dt
+
+    events = payload.get("data", [])
+    if not isinstance(events, list):
+        events = []
+
+    events_on_date = 0
+    events_matched = 0
+    events_unmatched = 0
+    unresolved_names: set[str] = set()
+    full_game_rows = 0
+    f5_rows = 0
+    games_without_f5 = 0
+
+    for event in events:
+        if event_et_date(event.get("commence_time")) != target_date:
+            continue
+        events_on_date += 1
+
+        home_name = event.get("home_team")
+        away_name = event.get("away_team")
+        home_id = team_lookup.get(home_name)
+        away_id = team_lookup.get(away_name)
+        if home_id is None or away_id is None:
+            for nm, rid in ((home_name, home_id), (away_name, away_id)):
+                if rid is None:
+                    unresolved_names.add(nm)
+            events_unmatched += 1
+            continue
+
+        game_id = match_event_to_game(event, home_id, away_id, games_by_teams)
+        if game_id is None:
+            events_unmatched += 1
+            continue
+
+        events_matched += 1
+        event_id = event.get("id")
+
+        full_game_rows += _upsert_book_segment(
+            engine,
+            game_id=game_id,
+            event_id=event_id,
+            bookmakers=event.get("bookmakers", []),
+            segment="full_game",
+            snapshot_time=snapshot_time,
+            home_name=home_name,
+            away_name=away_name,
+            is_closing=True,
+        )
+
+        if include_f5 and event_id:
+            try:
+                f5_payload = client.get_historical_event_odds(event_id, snapshot_iso)
+            except Exception as e:
+                logger.warning("Historical F5 fetch failed for event %s: %s", event_id, e)
+                games_without_f5 += 1
+                continue
+            rows = _upsert_book_segment(
+                engine,
+                game_id=game_id,
+                event_id=event_id,
+                bookmakers=f5_payload.get("bookmakers", []),
+                segment="f5",
+                snapshot_time=snapshot_time,
+                home_name=home_name,
+                away_name=away_name,
+                is_closing=True,
+            )
+            f5_rows += rows
+            if rows == 0:
+                games_without_f5 += 1
+
+    if unresolved_names:
+        logger.error("Unresolved team names: %s", sorted(unresolved_names))
+
+    logger.info(
+        "Historical odds for %s @ %s — games: %d, events: %d, matched: %d, "
+        "full_game rows: %d, F5 rows: %d | credits used: %s, remaining: %s",
+        target_date,
+        snapshot_iso,
+        len(games),
+        events_on_date,
+        events_matched,
+        full_game_rows,
+        f5_rows,
+        client.requests_used,
+        client.requests_remaining,
+    )
+
+    return {
+        "skipped": False,
+        "failed": False,
+        "target_date": str(target_date),
+        "snapshot_iso": snapshot_iso,
+        "games_in_db": len(games),
+        "events_on_date": events_on_date,
+        "events_matched": events_matched,
+        "events_unmatched": events_unmatched,
+        "full_game_rows": full_game_rows,
+        "f5_rows": f5_rows,
+        "games_without_f5": games_without_f5,
+        "unresolved_team_names": sorted(unresolved_names),
+        "credits_used": client.requests_used,
+        "credits_remaining": client.requests_remaining,
+    }
+
+
+def sync_historical_odds_range(
+    engine: Engine,
+    start_date: date,
+    end_date: date,
+    *,
+    include_f5: bool = False,
+    skip_existing: bool = True,
+) -> dict[str, Any]:
+    """Backfill closing odds for each calendar day in [start_date, end_date]."""
+    sleep_sec = float(os.getenv("ODDS_REQUEST_SLEEP_SEC", "1.0"))
+    current = start_date
+    failed_dates: list[str] = []
+    skipped_dates: list[str] = []
+    processed_dates: list[str] = []
+    totals = {"full_game_rows": 0, "f5_rows": 0, "events_matched": 0}
+
+    while current <= end_date:
+        games = get_games_for_date(engine, current)
+        if not games:
+            current += timedelta(days=1)
+            continue
+
+        if skip_existing:
+            with_closing = count_games_with_closing_odds(engine, current)
+            if with_closing >= len(games):
+                logger.info("%s already has closing odds for %d/%d games — skipping",
+                            current, with_closing, len(games))
+                skipped_dates.append(str(current))
+                current += timedelta(days=1)
+                continue
+
+        result = sync_historical_odds_for_date(
+            engine, current, include_f5=include_f5
+        )
+        if result.get("failed"):
+            failed_dates.append(str(current))
+        else:
+            processed_dates.append(str(current))
+            totals["full_game_rows"] += int(result.get("full_game_rows") or 0)
+            totals["f5_rows"] += int(result.get("f5_rows") or 0)
+            totals["events_matched"] += int(result.get("events_matched") or 0)
+
+        time.sleep(sleep_sec)
+        current += timedelta(days=1)
+
+    return {
+        "start_date": str(start_date),
+        "end_date": str(end_date),
+        "processed_dates": processed_dates,
+        "skipped_dates": skipped_dates,
+        "failed_dates": failed_dates,
+        **totals,
     }
