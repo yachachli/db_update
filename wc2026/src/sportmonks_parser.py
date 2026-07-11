@@ -306,16 +306,18 @@ def parse_fixture_to_match_stats(
         extract_stat_value(fixture, opponent_id, STAT_TYPE_IDS["shots_on_target"])
     )
 
-    # AFC/CAF/OFC qualifiers on our SportMonks plan often return fixtures with
-    # scores but an empty xgfixture array. Fall back to CURRENT goals so the
-    # team still has a usable (goals-only) rating path.
-    if not _xgfixture_has_participant_stats(fixture, team_id):
-        scored = _goals_from_scores(fixture, team_id)
-        if scored is not None:
-            goals_scored = scored
-        conceded = _goals_from_scores(fixture, opponent_id)
-        if conceded is not None:
-            goals_conceded = conceded
+    # The ``scores`` include is authoritative for full-time goals. xgfixture
+    # goals rows can be missing while other stats are present (seen mid-WC in
+    # July 2026, when every match started parsing as 0-0 and flattened the
+    # ratings), and AFC/CAF/OFC qualifiers on our plan often have scores but
+    # an empty xgfixture array. Only keep the xgfixture goals value when the
+    # scores include has nothing for that participant.
+    scored = _goals_from_scores(fixture, team_id)
+    if scored is not None:
+        goals_scored = scored
+    conceded = _goals_from_scores(fixture, opponent_id)
+    if conceded is not None:
+        goals_conceded = conceded
 
     # Display-only.
     possession_pct = extract_stat_value(
