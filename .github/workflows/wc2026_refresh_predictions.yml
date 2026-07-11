@@ -11,6 +11,10 @@ on:
         description: 'Predict fixtures kicking off within this many days (default 3). Use a larger value to backfill the opening slate.'
         required: false
         default: '3'
+      max_age_hours:
+        description: 'Re-predict fixtures whose prediction is older than this many hours (default 24). Use 0 to force a rewrite of every upcoming fixture in the window.'
+        required: false
+        default: '24'
 
 defaults:
   run:
@@ -39,4 +43,5 @@ jobs:
           NEON_DATABASE_URL: ${{ secrets.DB_URL }}
           SPORTMONKS_API_KEY: ${{ secrets.SPORTMONKS_API_KEY }}
           REFRESH_WITHIN_DAYS: ${{ github.event.inputs.within_days || '3' }}
+          REFRESH_MAX_AGE_HOURS: ${{ github.event.inputs.max_age_hours || '24' }}
         run: python scripts/cron_refresh_predictions.py

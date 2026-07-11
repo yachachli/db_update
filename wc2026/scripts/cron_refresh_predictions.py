@@ -44,6 +44,10 @@ def main() -> int:
     # fixtures further out than the daily 3-day horizon (e.g. an opening-slate
     # populate before the tournament starts). Scheduled runs leave it at 3.
     within_days = int(os.getenv("REFRESH_WITHIN_DAYS", "3"))
+    # Also env-overridable: how old a prediction must be before it is
+    # re-predicted. A manual dispatch with 0 forces a rewrite of every
+    # upcoming fixture in the window (e.g. after a model or data fix).
+    max_age_hours = int(os.getenv("REFRESH_MAX_AGE_HOURS", "24"))
     # Re-fetch qualifier + WC-finals matches each run so the 5-match window
     # picks up newly played World Cup fixtures (league 732).
     force_pool_refresh = os.getenv("FORCE_POOL_REFRESH", "1").lower() not in (
@@ -54,7 +58,9 @@ def main() -> int:
 
     try:
         pool = bootstrap_tournament_pool(force_refresh=force_pool_refresh)
-        fixtures = get_fixtures_needing_prediction(within_days=within_days)
+        fixtures = get_fixtures_needing_prediction(
+            within_days=within_days, prediction_max_age_hours=max_age_hours
+        )
     except DatabaseError as exc:
         print(f"ERROR: setup failed: {exc}")
         return 1
