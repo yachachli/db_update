@@ -172,6 +172,70 @@ def test_parse_fixture_scores_fallback_when_xgfixture_empty():
     assert stats.xg_conceded == 0.0
 
 
+def test_parse_goals_from_scores_when_xgfixture_lacks_goals_rows():
+    """July 2026 regression: xgfixture carries xG but NO goals rows.
+
+    Every match parsed as 0-0 because the scores fallback only ran when
+    xgfixture was empty for the team. Goals must come from the scores
+    include whenever it has them.
+    """
+    fixture = {
+        "id": 19606900,
+        "starting_at": "2026-07-06 19:00:00",
+        "league_id": WC_FINALS_LEAGUE_ID,
+        "participants": [
+            {"id": 18710, "name": "Spain", "meta": {"location": "home"}},
+            {"id": 18726, "name": "Portugal", "meta": {"location": "away"}},
+        ],
+        "scores": [
+            {
+                "description": "CURRENT",
+                "participant_id": 18710,
+                "score": {"goals": 2, "participant": "home"},
+            },
+            {
+                "description": "CURRENT",
+                "participant_id": 18726,
+                "score": {"goals": 1, "participant": "away"},
+            },
+        ],
+        "xgfixture": [
+            {"participant_id": 18710, "type_id": STAT_TYPE_IDS["xg"], "data": {"value": 1.8}},
+            {"participant_id": 18726, "type_id": STAT_TYPE_IDS["xg"], "data": {"value": 0.9}},
+            # No goals rows at all -- the upstream regression.
+        ],
+    }
+    stats = parse_fixture_to_match_stats(
+        fixture, team_id=18710, opponent_fifa_points=1600.0
+    )
+    assert stats.goals_scored == 2
+    assert stats.goals_conceded == 1
+    assert stats.xg_created == pytest.approx(1.8)
+    assert stats.outcome == "W"
+
+
+def test_parse_scores_take_precedence_over_xgfixture_goals():
+    """When both sources carry goals, the scores include is authoritative."""
+    fixture = _minimal_fixture()  # xgfixture says 2-1
+    fixture["scores"] = [
+        {
+            "description": "CURRENT",
+            "participant_id": 1,
+            "score": {"goals": 4, "participant": "home"},
+        },
+        {
+            "description": "CURRENT",
+            "participant_id": 2,
+            "score": {"goals": 0, "participant": "away"},
+        },
+    ]
+    stats = parse_fixture_to_match_stats(
+        fixture, team_id=1, opponent_fifa_points=1200.0
+    )
+    assert stats.goals_scored == 4
+    assert stats.goals_conceded == 0
+
+
 def test_parse_venue_neutral_for_wc_finals():
     fixture = _minimal_fixture(league_id=WC_FINALS_LEAGUE_ID)
     # Team 1 is the "home" participant, but finals are always neutral.
