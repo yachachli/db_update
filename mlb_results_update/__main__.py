@@ -37,7 +37,7 @@ def main() -> None:
 
         backfill_start = os.getenv("BACKFILL_START")
         backfill_end = os.getenv("BACKFILL_END")
-        backfill_days = int(os.getenv("BACKFILL_DAYS", "0"))
+        backfill_days = int(os.getenv("BACKFILL_DAYS") or "0")
         target_date = os.getenv("TARGET_DATE")
 
         is_backfill = bool((backfill_start and backfill_end) or backfill_days > 0)
