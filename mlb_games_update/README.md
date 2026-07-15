@@ -1,24 +1,24 @@
 # mlb_games_update
 
-Daily MLB schedule + probable pitchers sync. Part of the PropGPT MLB prediction model pipeline.
+MLB schedule + probable pitchers sync. Part of the PropGPT MLB prediction model pipeline.
 
 ## What it does
 
-At 11:00 UTC (6am ET) each day, this folder's GitHub Actions workflow runs `python -m mlb_games_update`, which:
+GitHub Actions runs `python -m mlb_games_update` several times per day. Each run:
 
 1. Connects to the shared Neon database (via the `DATABASE_URL` secret)
 2. On first run only: populates the 30 MLB teams and their home parks
-3. Fetches today's MLB slate from the free public MLB Stats API (`statsapi.mlb.com`)
+3. Fetches the MLB slate from the free public MLB Stats API (`statsapi.mlb.com`) with `hydrate=probablePitcher`
 4. Upserts each game (with probable pitchers when announced) into `propgpt_mlb.games`
 
-The script is **idempotent** — re-running on the same day overwrites with the latest probable pitcher information without creating duplicates.
+The script is **idempotent** — re-running fills NULL `home_sp_id` / `away_sp_id` when MLB later posts a probable, without wiping an id that was already set (`COALESCE` on upsert).
 
 ## Tables touched
 
 All in the `propgpt_mlb` schema of the shared Neon DB:
 - `teams` (bootstrap only — no-op after first run)
 - `parks` (bootstrap only)
-- `players` (stubs for probable pitchers; full enrichment happens later in `mlb_game_update`)
+- `players` (stubs for probable pitchers; handedness enrichment in this package)
 - `games`
 
 ## Operation modes
@@ -28,13 +28,20 @@ Selected by env var (first match wins):
 | Mode | Env vars | Use case |
 |---|---|---|
 | Manual date range | `BACKFILL_START=YYYYMMDD` + `BACKFILL_END=YYYYMMDD` | Fill gaps after a multi-day cron outage |
-| Auto rolling backfill | `BACKFILL_DAYS=N` | Refresh recent days (catches late lineup announcements) |
-| Single date | `TARGET_DATE=YYYY-MM-DD` | Test a specific date |
-| Default | (none) | Today (UTC) |
+| Auto rolling backfill | `BACKFILL_DAYS=N` | Refresh recent days (ET “today”) |
+| Single date | `TARGET_DATE=YYYY-MM-DD` | Test / force one slate date |
+| Default (live) | (none) | **Today + tomorrow (US/Eastern)** — probable refresh |
 
 ## Schedule
 
-`.github/workflows/mlb_games_update.yml` runs at `0 11 * * *` UTC (6am ET).
+`.github/workflows/mlb_games_update.yml` (UTC → approx ET during EDT):
+
+| Cron (UTC) | ≈ ET | Purpose |
+|---|---|---|
+| `0 11 * * *` | 7am | Morning slate + overnight probables |
+| `0 16 * * *` | 12pm | Late morning announcements / afternoon games |
+| `0 20 * * *` | 4pm | Pre-evening first-pitch refresh |
+| `0 23 * * *` | 7pm | West Coast / late changes + tomorrow listings |
 
 Also supports `workflow_dispatch` from the GitHub UI — useful for backfill or after a code change.
 
@@ -52,7 +59,7 @@ cd mlb_games_update
 pip install -r requirements.txt
 cp .env.example .env  # edit and add your DATABASE_URL
 
-# Today (default)
+# Today + tomorrow ET (default live mode)
 DATABASE_URL="postgresql://..." python -m mlb_games_update
 
 # Specific date

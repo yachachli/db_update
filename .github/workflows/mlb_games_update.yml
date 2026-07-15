@@ -2,12 +2,22 @@ name: MLB Games Update
 
 on:
   schedule:
-    # 11:00 UTC = 6am ET during EST, 7am ET during EDT
+    # Morning slate build — most probables already posted overnight.
+    # 11:00 UTC ≈ 7am ET (EDT) / 6am ET (EST)
     - cron: '0 11 * * *'
+    # Midday refresh — catch late morning announcements before afternoon starts.
+    # 16:00 UTC ≈ 12pm ET (EDT)
+    - cron: '0 16 * * *'
+    # Pre-evening refresh — last look before most 7pm ET first pitches.
+    # 20:00 UTC ≈ 4pm ET (EDT)
+    - cron: '0 20 * * *'
+    # Night / West Coast pass — late changes + tomorrow's early listings.
+    # 23:00 UTC ≈ 7pm ET (EDT)
+    - cron: '0 23 * * *'
   workflow_dispatch:
     inputs:
       target_date:
-        description: 'Single date override (YYYY-MM-DD). Leave blank for today.'
+        description: 'Single date override (YYYY-MM-DD). Leave blank for today+tomorrow ET.'
         required: false
         default: ''
       backfill_days:
@@ -44,6 +54,7 @@ jobs:
       - name: Run mlb_games_update
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # Empty string from schedule → live today+tomorrow ET mode in __main__
           TARGET_DATE: ${{ github.event.inputs.target_date || '' }}
           BACKFILL_DAYS: ${{ github.event.inputs.backfill_days || '0' }}
           BACKFILL_START: ${{ github.event.inputs.backfill_start || '' }}
