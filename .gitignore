@@ -16,3 +16,5 @@ bracketiq/data/cache/*.parquet
 bracketiq/data/analysis/*.json
 bracketiq/data/analysis/*.csv
 bracketiq/data/analysis/*.txt
+# MLB predict artifacts
+mlb_predict/predictions/

@@ -1,0 +1,56 @@
+name: MLB Predict Daily Slate
+
+on:
+  schedule:
+    # Morning run — after games (11:00), odds (12:00), and weather (12:30 UTC)
+    # ingests have refreshed. 13:00 UTC ≈ 9am ET. Predicts today + tomorrow ET.
+    - cron: '0 13 * * *'
+    # Late-afternoon refresh — after the 16:00 UTC games/odds refresh, catches
+    # late probable-pitcher announcements and line moves before evening games.
+    - cron: '30 20 * * *'
+  workflow_dispatch:
+    inputs:
+      slate_date:
+        description: 'Slate date override (YYYY-MM-DD). Leave blank for today + tomorrow ET.'
+        required: false
+        default: ''
+
+jobs:
+  predict:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        working-directory: mlb_predict
+        run: pip install -r requirements.txt
+
+      - name: Predict today's slate
+        working-directory: mlb_predict
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          SLATE_DATE="${{ github.event.inputs.slate_date }}"
+          if [ -z "$SLATE_DATE" ]; then
+            SLATE_DATE=$(TZ=America/New_York date +%F)
+          fi
+          python predict_slate.py --date "$SLATE_DATE" --write-db
+
+      - name: Predict tomorrow's slate
+        # Early pass — probables/odds may be partial; the next morning run
+        # refreshes everything via upsert.
+        if: ${{ github.event.inputs.slate_date == '' }}
+        working-directory: mlb_predict
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          SLATE_DATE=$(TZ=America/New_York date -d '+1 day' +%F)
+          python predict_slate.py --date "$SLATE_DATE" --write-db
