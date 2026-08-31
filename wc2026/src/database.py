@@ -194,7 +194,7 @@ def upsert_fixture(fixture_data: dict[str, Any]) -> int:
                     team_b_name = EXCLUDED.team_b_name,
                     scheduled_at = EXCLUDED.scheduled_at,
                     venue_city = EXCLUDED.venue_city,
-                    round = EXCLUDED.round,
+                    round = COALESCE(wc2026_fixtures.round, EXCLUDED.round),
                     actual_home_goals = EXCLUDED.actual_home_goals,
                     actual_away_goals = EXCLUDED.actual_away_goals,
                     actual_outcome = EXCLUDED.actual_outcome,
