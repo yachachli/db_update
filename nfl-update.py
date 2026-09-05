@@ -179,6 +179,26 @@ async def main():
             logging.info(f"  got {len(data_teams['body'])} teams")
             data_players = await client.get("/getNFLPlayerList")
             logging.info(f"  got {len(data_players['body'])} players")
+            # The player list's "team" field lags real moves by months, so the
+            # authoritative team comes from each club's current roster.
+            roster_team_by_player_id: dict[str, str] = {}
+            for team in data_teams["body"]:
+                abv = team["teamAbv"]
+                try:
+                    data_roster = await client.get(
+                        "/getNFLTeamRoster",
+                        params={"teamAbv": abv, "getStats": "false"},
+                    )
+                except Exception:
+                    logging.exception(f"  roster fetch failed for {abv}; keeping list teams")
+                    continue
+                body = data_roster.get("body") or {}
+                entries = body.get("roster") if isinstance(body, dict) else body
+                for entry in entries or []:
+                    pid = str(entry.get("playerID") or "")
+                    if pid:
+                        roster_team_by_player_id[pid] = "WAS" if abv == "WSH" else abv
+            logging.info(f"  got roster teams for {len(roster_team_by_player_id)} players")
 
         logging.info("creating dataframes")
         df_teams = pl.DataFrame(data_teams["body"])
@@ -350,6 +370,24 @@ async def main():
             ],
         )
         logging.info(f"  inserted {len(players)} players")
+        # Override team_id from the current rosters (playerID -> espnID via the list).
+        team_id_by_code = {r["team_code"]: r["id"] for r in rows_teams}
+        roster_updates = []
+        for player in data_players["body"]:
+            pid = str(player.get("playerID") or "")
+            abv = roster_team_by_player_id.get(pid)
+            espn = player.get("espnID")
+            if abv and espn and abv in team_id_by_code:
+                try:
+                    roster_updates.append((team_id_by_code[abv], int(espn)))
+                except (TypeError, ValueError):
+                    continue
+        if roster_updates:
+            await conn.executemany(
+                "UPDATE v3_nfl_players SET team_id = $1 WHERE id = $2 AND team_id <> $1",
+                roster_updates,
+            )
+        logging.info(f"  applied roster teams for {len(roster_updates)} players")
 
         ################################################################################
         #                                INSERT GAMES AND GAME STATS
