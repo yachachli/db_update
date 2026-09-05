@@ -697,6 +697,9 @@ async def main():
         await conn.close()
     except Exception:
         logging.error(traceback.format_exc())
+        # A swallowed failure reported "success" for months while Tank01 was
+        # returning 403 — fail the run so the Actions history shows it.
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
