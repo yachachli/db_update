@@ -103,7 +103,16 @@ class APIClient:
         attempts = 0
         while attempts < 6:
             attempts += 1
-            response = await self.client.get(url, params=params, headers=headers)
+            try:
+                response = await self.client.get(url, params=params, headers=headers)
+            except httpx.TransportError as exc:
+                # Read timeouts / connection resets on a 6k-player crawl are routine;
+                # one of them must not take the whole daily run down.
+                if attempts >= 6:
+                    raise
+                logging.warning(f"transport error on {endpoint} ({exc!r}); retry {attempts}")
+                await asyncio.sleep(min(2**attempts, 20))
+                continue
             # 429 handling
             if response.status_code == 429:
                 retry_after = response.headers.get("Retry-After")
