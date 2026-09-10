@@ -428,13 +428,22 @@ async def main():
 
         logging.info("  creating dataframe")
         games = []
-        cutoff_date = datetime(2025, 9, 3)
+        # Keep only the previous completed season (regular + playoffs) and the
+        # current one: cutoff = Sept 1 of the season before the one in progress.
+        _today = datetime.now()
+        _season_year = _today.year if _today.month >= 9 else _today.year - 1
+        cutoff_date = datetime(_season_year - 1, 9, 1)
+        logging.info(f"  game cutoff {cutoff_date:%Y-%m-%d}; preseason (Jul/Aug) excluded")
         for data in data_player_stats:
             for k, v in data.items():
                 date, teams = k.split("_")
                 away, home = teams.split("@")
                 v["date"] = datetime.strptime(date, "%Y%m%d")
                 # Skip preseason or earlier games
+                # Preseason games (Hall of Fame game through late August) never
+                # count toward player history or props.
+                if v["date"].month in (7, 8):
+                    continue
                 if v["date"] <= cutoff_date:
                     continue
                 v["home"] = home if home != "WSH" else "WAS"
