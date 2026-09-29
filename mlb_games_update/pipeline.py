@@ -29,6 +29,19 @@ logging.basicConfig(
 # SET search_path doesn't reliably persist across transactions.
 SCHEMA = "propgpt_mlb"
 
+# MLB Stats API gameType codes we ingest: the regular season plus the four
+# postseason rounds (F = Wild Card, D = Division Series, L = League
+# Championship Series, W = World Series; P is the legacy generic postseason
+# code). Everything else — Spring Training ('S'), exhibitions ('E'), the
+# All-Star game ('A') — stays out, since those rosters don't reflect real play.
+#
+# Postseason was excluded here until the 2026 playoffs, which left
+# propgpt_mlb.games empty from the first October slate on and stalled the whole
+# predict → serve → app chain. Note that `games` has no game_type column, so
+# anything that must train on the regular season alone has to bound by date;
+# see the follow-up note in the PR that widened this.
+INGESTED_GAME_TYPES = frozenset({"R", "F", "D", "L", "W", "P"})
+
 # libpq connection args. TCP keepalives let the OS detect a dead/black-holed socket in
 # tens of seconds instead of blocking indefinitely (the cause of multi-hour hangs during
 # a long backfill on a flaky network); connect_timeout bounds the initial dial.
@@ -351,15 +364,18 @@ def sync_games_for_date(engine: Engine, target_date: str) -> dict[str, int]:
     games = client.get_schedule_with_pitchers(target_date)
     logger.info("Fetched %d games for %s", len(games), target_date)
 
-    # Regular season only ('R'). Spring Training ('S'), exhibitions ('E'), All-Star ('A'),
-    # and postseason ('P'/'D'/'L'/'W'/'F') are excluded from training + daily prediction.
-    reg_games = [g for g in games if g.get("gameType") == "R"]
-    filtered_non_reg = len(games) - len(reg_games)
-    if filtered_non_reg:
-        types = sorted({g.get("gameType") for g in games if g.get("gameType") != "R"})
-        logger.info("Filtered %d non-regular-season game(s) on %s (gameType in %s)",
-                    filtered_non_reg, target_date, types)
-    games = reg_games
+    # Regular season + postseason (see INGESTED_GAME_TYPES). Spring Training,
+    # exhibitions, and the All-Star game are dropped.
+    kept_games = [g for g in games if g.get("gameType") in INGESTED_GAME_TYPES]
+    filtered_out = len(games) - len(kept_games)
+    if filtered_out:
+        types = sorted({
+            g.get("gameType") for g in games
+            if g.get("gameType") not in INGESTED_GAME_TYPES
+        })
+        logger.info("Filtered %d non-competitive game(s) on %s (gameType in %s)",
+                    filtered_out, target_date, types)
+    games = kept_games
 
     # Neutral-site venues (Seoul/London/etc.) must exist in parks before we upsert games.
     known_park_ids = load_known_park_ids(engine)

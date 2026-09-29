@@ -433,12 +433,17 @@ def main() -> None:
         encoding="utf-8",
     )
     print(f"Wrote {out_path}")
-    print(f"  games={payload['n_games']} predicted={payload['n_predicted']} skipped={payload['n_skipped']}")
     if payload.get("error"):
         # An empty slate is normal on off-days (All-Star break etc.), so a
         # scheduled run shouldn't go red — but surface it loudly for humans.
+        # This check must stay ahead of the summary line below: the empty-slate
+        # payload carries only n_games, so reading n_predicted here raised
+        # KeyError and took the job red instead of warning.
+        print(f"  games={payload['n_games']}")
         print(f"  WARNING: {payload['error']}", file=sys.stderr)
         return
+
+    print(f"  games={payload['n_games']} predicted={payload['n_predicted']} skipped={payload['n_skipped']}")
 
     if args.write_db:
         n = write_predictions_to_db(payload)

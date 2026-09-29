@@ -22,6 +22,13 @@ from .mlb_stats_client import MLBStatsClient
 
 SCHEMA = "propgpt_mlb"
 
+# Regular season + the four postseason rounds. Keep in sync with
+# INGESTED_GAME_TYPES in mlb_games_update/pipeline.py — results must cover
+# every game type that module ingests, or postseason games land in `games`
+# with no row in `outcomes`, freezing team form and head-to-head at the end
+# of the regular season.
+INGESTED_GAME_TYPES = frozenset({"R", "F", "D", "L", "W", "P"})
+
 # libpq connection args. TCP keepalives let the OS detect a dead/black-holed socket in
 # tens of seconds instead of blocking indefinitely (the cause of multi-hour hangs during
 # a long backfill on a flaky network); connect_timeout bounds the initial dial.
@@ -480,14 +487,18 @@ def sync_results_for_date(engine: Engine, target_date: str) -> dict[str, int]:
     schedule = client.get_schedule(target_date)
     logger.info("Fetched %d games for %s", len(schedule), target_date)
 
-    # Regular season only ('R') — no Spring Training, exhibitions, All-Star, or postseason.
-    reg_schedule = [g for g in schedule if g.get("gameType") == "R"]
-    filtered_non_reg = len(schedule) - len(reg_schedule)
-    if filtered_non_reg:
-        types = sorted({g.get("gameType") for g in schedule if g.get("gameType") != "R"})
-        logger.info("Filtered %d non-regular-season game(s) on %s (gameType in %s)",
-                    filtered_non_reg, target_date, types)
-    schedule = reg_schedule
+    # Regular season + postseason (see INGESTED_GAME_TYPES) — no Spring
+    # Training, exhibitions, or All-Star.
+    kept_schedule = [g for g in schedule if g.get("gameType") in INGESTED_GAME_TYPES]
+    filtered_out = len(schedule) - len(kept_schedule)
+    if filtered_out:
+        types = sorted({
+            g.get("gameType") for g in schedule
+            if g.get("gameType") not in INGESTED_GAME_TYPES
+        })
+        logger.info("Filtered %d non-competitive game(s) on %s (gameType in %s)",
+                    filtered_out, target_date, types)
+    schedule = kept_schedule
 
     final_games = [g for g in schedule if (g.get("status") or {}).get("abstractGameState") == "Final"]
     non_final = len(schedule) - len(final_games)
