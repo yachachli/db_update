@@ -649,10 +649,10 @@ def sync_results_for_date(engine: Engine, target_date: str) -> dict[str, int]:
     logger.info(
         "Results for %s — outcomes: %d, pitcher logs: %d, team logs: %d, "
         "starters written to games: %d, statuses bumped to Final: %d, pitchers enriched: %d, "
-        "F5 computed: %d (skipped short games: %d), filtered non-reg: %d",
+        "F5 computed: %d (skipped short games: %d), filtered non-competitive: %d",
         target_date, outcomes_written, pitcher_logs_written, team_logs_written,
         starters_written, statuses_bumped, pitchers_enriched, f5_computed, f5_skipped_short,
-        filtered_non_reg,
+        filtered_out,
     )
 
     return {
@@ -665,5 +665,5 @@ def sync_results_for_date(engine: Engine, target_date: str) -> dict[str, int]:
         "f5_computed": f5_computed,
         "f5_skipped_short": f5_skipped_short,
         "games_skipped_non_final": non_final,
-        "filtered_non_reg": filtered_non_reg,
+        "filtered_non_competitive": filtered_out,
     }

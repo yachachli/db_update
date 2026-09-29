@@ -38,6 +38,20 @@ def _today_et() -> date:
     return datetime.now(ET_ZONE).date()
 
 
+def _exit_if_total_failure(result: dict) -> None:
+    """Fail the job when a backfill salvaged nothing.
+
+    A partial failure is normal — a single date can 500 on the Stats API — so
+    those stay green and get picked up by the next pass. But when *every* date
+    failed the run is not a backfill, it's a no-op, and exiting 0 hides that:
+    a rename that left an undefined name in sync_games_for_date took all four
+    playoff dates down and still reported success.
+    """
+    if result["dates"] and len(result["failed_dates"]) == result["dates"]:
+        print("All dates failed — see errors above.", file=sys.stderr)
+        raise SystemExit(1)
+
+
 def _sync_dates(engine, dates: list[date]) -> dict:
     total_games = 0
     failed_dates: list[str] = []
@@ -90,6 +104,7 @@ def main() -> None:
             )
             if result["failed_dates"]:
                 print(f"{len(result['failed_dates'])} date(s) FAILED: {result['failed_dates']}")
+                _exit_if_total_failure(result)
 
         elif backfill_days > 0:
             today = _today_et()
@@ -106,6 +121,7 @@ def main() -> None:
             )
             if result["failed_dates"]:
                 print(f"{len(result['failed_dates'])} date(s) FAILED: {result['failed_dates']}")
+                _exit_if_total_failure(result)
 
         elif target_date:
             print(f"Single-date mode: {target_date}")

@@ -410,15 +410,15 @@ def sync_games_for_date(engine: Engine, target_date: str) -> dict[str, int]:
     probables_enriched, enrich_failures = enrich_probable_pitchers(engine, target_date)
 
     logger.info(
-        "Games sync for %s — games: %d, filtered non-reg: %d, venues stubbed: %d, "
+        "Games sync for %s — games: %d, filtered non-competitive: %d, venues stubbed: %d, "
         "players stubbed: %d, probable pitchers enriched: %d (failures: %d)",
-        target_date, games_synced, filtered_non_reg, venues_stubbed, players_stubbed,
+        target_date, games_synced, filtered_out, venues_stubbed, players_stubbed,
         probables_enriched, enrich_failures,
     )
 
     return {
         "games": games_synced,
-        "filtered_non_reg": filtered_non_reg,
+        "filtered_non_competitive": filtered_out,
         "venues_stubbed": venues_stubbed,
         "players_stubbed": players_stubbed,
         "probables_enriched": probables_enriched,
