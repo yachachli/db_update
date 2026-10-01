@@ -1,0 +1,1 @@
+"""BestBet college football models."""

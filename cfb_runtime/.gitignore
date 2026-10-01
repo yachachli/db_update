@@ -1,0 +1,22 @@
+# Local secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+*.egg-info/
+
+# Local model/data artifacts
+data/
+models/saved/
+outputs/
+dist/
+build/
+
+# macOS
+.DS_Store

@@ -1,0 +1,15 @@
+[project]
+name = "bestbet-cfb-pou"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["requests>=2.32", "python-dotenv>=1.0", "psycopg[binary]>=3.2", "numpy>=2", "pandas>=2", "scikit-learn>=1.5"]
+
+[project.scripts]
+cfb = "cfb.cli:main"
+
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["cfb*"]
