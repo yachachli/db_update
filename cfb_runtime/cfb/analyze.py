@@ -41,7 +41,7 @@ def load_artifacts(category):
     return manifest,entry,joblib.load(paths[0]),json.loads(paths[1].read_text())
 
 
-def analyze(request):
+def analyze_internal(request):
     gid,pid,line,as_of,category=validate_request(request)
     manifest,entry,model,cal=load_artifacts(category)
     cutoff=as_of.normalize()
@@ -118,6 +118,12 @@ def analyze(request):
             'validation_run_id':entry['validation_run_id']}
 
 
+def analyze(request):
+    """Public API response, shaped like the NFL POU renderer."""
+    from cfb.renderer import render_analysis
+    return render_analysis(analyze_internal(request))
+
+
 def serve(port=8088):
     from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
     class Handler(BaseHTTPRequestHandler):
@@ -136,7 +142,7 @@ def serve(port=8088):
             payload=json.dumps(result,allow_nan=False).encode()
             self.send_response(status); self.send_header('Content-Type','application/json'); self.end_headers(); self.wfile.write(payload)
         def log_message(self,*args): pass
-    print(f'Local research API: http://127.0.0.1:{port}/cfb_pou',flush=True)
+    print(f'Local CFB API: http://127.0.0.1:{port}/cfb_pou',flush=True)
     server=ThreadingHTTPServer(('127.0.0.1',port),Handler)
     try:
         server.serve_forever()

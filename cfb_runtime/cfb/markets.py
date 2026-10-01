@@ -140,8 +140,8 @@ def collect(limit=5, analyze_limit=3, new_only=False, per_game_limit=10):
             request = dict(game_id=game['game_id'], player_id=int(player[0]), team_id=player[1],
                            stat=MARKETS[row['market']], line=row['line'], as_of=captured.isoformat())
             try:
-                from cfb.analyze import analyze
-                analysis = analyze(request)
+                from cfb.analyze import analyze_internal
+                analysis = analyze_internal(request)
                 analysis['market_identity_status'] = 'candidate_unverified'
                 with connect() as conn:
                     # Late results are not counted as forward predictions.
