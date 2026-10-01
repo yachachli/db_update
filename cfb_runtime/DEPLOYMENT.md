@@ -22,12 +22,12 @@ The db_update copy is a tested snapshot of POU, not a checkout of a moving branc
 
 ## Secrets and activation
 
-Set these **dedicated** db_update Actions secrets through its repository owner:
+Use these db_update Actions secrets (existing shared values are reused without changes):
 
-- `CFB_DATABASE_URL`: the existing Neon database, restricted to `cfb_model_v1`
+- `DATABASE_URL`: the existing Neon database, with CFB writes restricted to `cfb_model_v1`
   where practical. Never print the URL. Other sports' DB secrets remain untouched.
 - `CFBD_API_KEY`: the existing authenticated CFBD key.
-- `CFB_ODDS_API_KEY`: the CFB Odds API key; do not overwrite the shared odds key.
+- `ODDS_API_KEY`: the existing shared Odds API key. CFB calls consume its shared quota.
 
 The workflow is scheduled but gated by repository variable `CFB_CRON_ENABLED=true`.
 Leave it disabled until the PR is reviewed, secrets are configured, and manual
@@ -98,7 +98,7 @@ season is validated before inference. Version 1 supports the 2026 season only.
 - Unit suites and secret scan clean in both exports.
 - No `.env`, API values, database URLs with credentials, caches or raw data tracked.
 - Private repositories and CI confirmed; source manifests committed.
-- db_update PR reviewed; secret owner configures three CFB secrets.
+- db_update PR reviewed; DATABASE_URL, ODDS_API_KEY and CFBD_API_KEY secrets are present.
 - Both manual modes succeed; inspect Neon coverage and run status.
 - Activate the cron variable only after those checks.
 - Deploy trusted artifacts separately before enabling scheduled inference.
