@@ -19,7 +19,16 @@ def connect():
     url = os.environ.get('DATABASE_URL', '')
     if not url.startswith(('postgres://', 'postgresql://')):
         raise ValueError('DATABASE_URL must point to PostgreSQL/Neon')
-    return psycopg.connect(url, connect_timeout=10, options='-c statement_timeout=30000')
+    conn = psycopg.connect(url, connect_timeout=10)
+    try:
+        # Neon transaction poolers reject statement_timeout in startup options.
+        # All callers use one connection-context transaction: keep the setting
+        # local to that transaction, with no session state leaking to the pool.
+        conn.execute("SET LOCAL statement_timeout = '30s'")
+    except Exception:
+        conn.close()
+        raise
+    return conn
 
 
 def migrate():

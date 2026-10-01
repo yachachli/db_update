@@ -5,10 +5,32 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from cfb.data import Client
+from cfb.data import Client, connect
 
 
 class ClientTests(unittest.TestCase):
+    def test_pooled_connection_sets_timeout_after_connect(self):
+        url = 'postgresql://user:example@pooler.example/db'
+        with patch.dict('os.environ', {'DATABASE_URL': url}), patch('cfb.data.psycopg.connect') as pg:
+            conn = connect()
+            pg.assert_called_once_with(url, connect_timeout=10)
+            conn.execute.assert_called_once_with("SET LOCAL statement_timeout = '30s'")
+            conn.commit.assert_not_called()
+            conn.close.assert_not_called()
+
+    def test_timeout_setup_failure_closes_connection(self):
+        with patch.dict('os.environ', {'DATABASE_URL': 'postgresql://example/db'}), patch('cfb.data.psycopg.connect') as pg:
+            pg.return_value.execute.side_effect = RuntimeError('setup failed')
+            with self.assertRaisesRegex(RuntimeError, 'setup failed'):
+                connect()
+            pg.return_value.close.assert_called_once()
+
+    def test_invalid_database_url_never_connects(self):
+        with patch.dict('os.environ', {'DATABASE_URL': ''}), patch('cfb.data.psycopg.connect') as pg:
+            with self.assertRaises(ValueError):
+                connect()
+            pg.assert_not_called()
+
     def test_zero_budget_never_sends_request(self):
         with patch.dict('os.environ', {'CFBD_API_KEY': 'test-secret'}):
             client = Client(max_calls=0)
