@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import joblib
 from cfb.data import ROOT,connect
-from cfb.pou import candidates
+from cfb.pou import candidates,COLS
 from cfb.backtest import rating_features
 from cfb.efficiency import efficiency_features
 from cfb.release import predict,probability
@@ -34,16 +34,18 @@ def load_artifacts(category):
     root=ROOT/'models/saved/pou_v1'
     manifest=json.loads((root/'manifest.json').read_text())
     entry=manifest['categories'][category]
-    paths=[root/entry['artifact'],root/entry['calibration']]
+    names=[entry['artifact'],entry['calibration'],entry['participation_artifact']]
+    paths=[root/n for n in names]
     if any(p.resolve().parent!=root.resolve() for p in paths): raise ValueError('Artifact path outside model directory')
-    if hashlib.sha256(paths[0].read_bytes()).hexdigest()!=entry['sha256']: raise ValueError('Model artifact integrity mismatch')
+    for path,key in ((paths[0],'sha256'),(paths[2],'participation_sha256')):
+        if hashlib.sha256(path.read_bytes()).hexdigest()!=entry[key]: raise ValueError('Model artifact integrity mismatch')
     # Only load our own locally trained, integrity-checked artifacts.
-    return manifest,entry,joblib.load(paths[0]),json.loads(paths[1].read_text())
+    return manifest,entry,joblib.load(paths[0]),json.loads(paths[1].read_text()),joblib.load(paths[2])
 
 
 def analyze_internal(request):
     gid,pid,line,as_of,category=validate_request(request)
-    manifest,entry,model,cal=load_artifacts(category)
+    manifest,entry,model,cal,participation=load_artifacts(category)
     cutoff=as_of.normalize()
     if pd.Timestamp(cal['last_calibration_kickoff'])>=cutoff: raise ValueError('Model calibration is later than requested cutoff')
     with connect() as conn:
@@ -93,6 +95,8 @@ def analyze_internal(request):
         if key in request and str(request[key])!=expected: raise ValueError(f'{key} requires the exact CFBD school name in this prototype')
     volume,point=predict(model,selected)
     point=float(point[0]); volume=float(volume[0]); radius=cal['q90']*np.sqrt(max(volume,1))
+    # P(a box score records this category). Not availability and not an injury model.
+    play=float(participation.predict_proba(selected[COLS])[0,1])
     probs=probability(point,volume,line,cal['residuals'])
     lean='over' if probs['over']>probs['under'] else 'under' if probs['under']>probs['over'] else None
     recent=players[(players.player_id==pid)&(players.team_id==team)&(players.category==category)].merge(
@@ -100,14 +104,19 @@ def analyze_internal(request):
     recent=recent[recent.season==target[1]].sort_values('kickoff').tail(5)
     values=recent.yards.to_numpy()
     reasons=['availability_unconfirmed','sportsbook_identity_unverified','grading_rules_unverified','conditional_distribution_not_market_validated']
+    if play<.5: reasons.append('low_projected_participation')
     if category=='receiving': reasons.append('receiving_zero_label_sensitivity')
     if not cal['volume_low']<=volume<=cal['volume_high']: reasons.append('outside_calibration_workload')
     if 2*radius>cal['width90_limit']: reasons.append('wide_interval')
     insights=[f"Projects {point:.1f} yards versus a {line:g} line, conditional on a recorded {category} outcome.",
+              f"Estimated {play:.0%} chance of recording a {category} stat at all; "
+              f"unconditional projection {play*point:.1f} yards.",
               f"Uses {int(row.prior_games)} prior eligible appearances and opponent-adjusted game context; model: {entry['kind']}.",
               'No bet recommendation: availability, zero-stat coverage, and market grading remain unverified.']
     return {**base,'player_name':row.player_name,'team':team_name,'opponent':opponent,'projected_value':point,
             'projected_volume':volume,'model_lean':lean,'conditional_probabilities':probs,
+            'participation_probability':play,'unconditional_projected_value':play*point,
+            'participation_label':'Probability a box score records this category; not confirmed availability',
             'point_target':'conditional median' if entry['kind']=='boosted_median' else 'volume times efficiency',
             'volume_source':'trailing-five mean' if entry['kind']!='volume_efficiency' else 'volume regression',
             'interval90':{'lower':float(point-radius),'upper':float(point+radius),'nominal_level':.9},

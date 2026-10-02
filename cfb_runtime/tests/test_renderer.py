@@ -63,3 +63,35 @@ class RendererTests(unittest.TestCase):
         internal.assert_called_once_with({'request': 'example'})
         self.assertNotIn('market_ready', result)
         self.assertEqual(result['over_under'], 'under')
+
+
+class ParticipationRenderingTests(unittest.TestCase):
+    def base(self, probability):
+        return {'input': {'player_id': 1, 'team_code': 'X', 'line': 40.5, 'stat': 'rush yards',
+                          'opponent_abv': 'Y'},
+                'projected_value': 58.0, 'projected_volume': 11.0,
+                'participation_probability': probability, 'model_lean': 'over',
+                'player_name': 'Test Back', 'opponent': 'Y'}
+
+    def test_low_participation_withdraws_the_side(self):
+        out = render_analysis(self.base(0.22))
+        self.assertIsNone(out['over_under'])
+        self.assertIn('22%', out['short_answer'])
+        self.assertIn('likely no', out['short_answer'])
+
+    def test_high_participation_keeps_the_side_and_reports_unconditional(self):
+        out = render_analysis(self.base(0.93))
+        self.assertEqual(out['over_under'], 'over')
+        self.assertTrue(any('93% chance' in i for i in out['insights']))
+        self.assertTrue(any('53.9 yards unconditionally' in i for i in out['insights']))
+
+    def test_absent_participation_leaves_contract_unchanged(self):
+        row = self.base(0.5); row.pop('participation_probability')
+        out = render_analysis(row)
+        self.assertEqual(out['over_under'], 'over')
+        self.assertFalse(any('unconditionally' in i for i in out['insights']))
+
+    def test_field_list_is_unchanged_by_participation(self):
+        self.assertEqual(set(render_analysis(self.base(0.22))),
+                         set(render_analysis(self.base(0.93))))
+

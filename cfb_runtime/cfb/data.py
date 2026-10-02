@@ -31,6 +31,18 @@ def connect():
     return conn
 
 
+def copy_rows(conn, table, columns, rows):
+    """Bulk-load prediction output. Row-at-a-time inserts over a pooled Neon
+    connection do not scale to the candidate volume these backtests produce."""
+    if not rows:
+        return 0
+    target = f"COPY {table} ({','.join(columns)}) FROM STDIN"
+    with conn.cursor().copy(target) as copy:
+        for row in rows:
+            copy.write_row(row)
+    return len(rows)
+
+
 def migrate():
     with connect() as conn:
         for path in sorted((ROOT / 'migrations').glob('*.sql')):
@@ -119,3 +131,37 @@ def snapshot_odds():
         for event in events:
             conn.execute('INSERT INTO cfb_model_v1.odds_snapshots(event_id,payload) VALUES (%s,%s)', (event['id'],json.dumps(event)))
     print(f'Odds snapshots: {len(events)} events stored')
+
+
+def ingest_lines(years, refresh=False):
+    """Historical consensus lines. Spread is home-perspective and negative when home is favored."""
+    client = Client(max_calls=400)
+    for year in years:
+        with connect() as conn:
+            known = {r[0] for r in conn.execute(
+                'SELECT game_id FROM cfb_model_v1.games WHERE season=%s', (year,)).fetchall()}
+        stored, skipped = 0, 0
+        for season_type in ('regular', 'postseason'):
+            rows = client.get('/lines', {'year': year, 'seasonType': season_type, 'classification': 'fbs'},
+                              cache=not refresh)
+            with connect() as conn, conn.pipeline():
+                for game in rows:
+                    # /lines covers matchups the FBS schedule table does not carry.
+                    if game['id'] not in known:
+                        skipped += 1
+                        continue
+                    for line in game.get('lines') or []:
+                        if line.get('spread') is None and line.get('overUnder') is None:
+                            continue
+                        conn.execute("""INSERT INTO cfb_model_v1.betting_lines
+                            (game_id,provider,spread,spread_open,over_under,over_under_open,home_moneyline,away_moneyline)
+                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                            ON CONFLICT(game_id,provider) DO UPDATE SET spread=excluded.spread,
+                            spread_open=excluded.spread_open,over_under=excluded.over_under,
+                            over_under_open=excluded.over_under_open,home_moneyline=excluded.home_moneyline,
+                            away_moneyline=excluded.away_moneyline,retrieved_at=now()""",
+                            (game['id'], line['provider'], line.get('spread'), line.get('spreadOpen'),
+                             line.get('overUnder'), line.get('overUnderOpen'),
+                             line.get('homeMoneyline'), line.get('awayMoneyline')))
+                        stored += 1
+        print(f'{year}: {stored} provider lines stored, {skipped} off-schedule games skipped', flush=True)

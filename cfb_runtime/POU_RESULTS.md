@@ -1,55 +1,108 @@
-# First player-yardage models
+# POU model: cross-season eligibility and participation
 
-Completed September 30, 2026. `pou-volume-efficiency-v0` is a reproducible, conditional point-projection baseline for passing, rushing, and receiving yards. It is not yet a sportsbook-ready over/under probability model.
+Updated October 2, 2026. Neon runs 61-72 (`pou-volume-efficiency-v1`) and 73-78
+(`cfb-pou-v2` release validation).
 
-## Outcome
+## Two changes
 
-**Later audit:** See [OUTCOME_AUDIT.md](OUTCOME_AUDIT.md). Receiving's conditional advantage reverses when activity-backed, team-reconciled inferred zeros are included in a separate sensitivity check. The initial results below remain accurate for their explicit-outcome population, but are not robust evidence of performance on all prop candidates.
+**History carries across seasons on the same team.** Eligibility previously
+keyed history to `(season, team, category)`, which blacked out the opening weeks
+of every season even for a returning starter with a full prior season on record.
+A player who appeared in all of 2025 was still ineligible in weeks 1-3 of 2026.
+History now keys to `(team, category)`, with a 400-day offseason gap limit and a
+guard so a transferred player is never enumerated for their old team.
 
-The two-stage volume/efficiency models reduced mean absolute yardage error versus both trailing-five and last-game yardage baselines in all nine category/season comparisons. Gains over trailing-five averages are modest and have not undergone statistical significance testing.
+**Participation is modelled explicitly.** Roughly half of all candidates never
+record a stat in their category. A conditional yardage projection on its own was
+mis-specified for the population it was being applied to.
 
-Pooled 2023–2025 errors, calculated on identical graded rows within each category (yards; lower is better):
+## Coverage
 
-| Category | Model MAE | Trailing-five MAE | Last-game MAE |
+Candidate rows, 2023-2025:
+
+| Category | Before | After | Change |
 | --- | ---: | ---: | ---: |
-| Passing | 68.29 | 70.79 | 85.06 |
-| Rushing | 26.71 | 27.55 | 33.43 |
-| Receiving | 22.10 | 22.40 | 27.83 |
+| Passing | 4,638 | 9,869 | +113% |
+| Rushing | 14,619 | 29,097 | +99% |
+| Receiving | 28,127 | 62,643 | +123% |
 
-2025-only model / trailing-five MAE: passing 68.62 / 71.06; rushing 26.60 / 27.53; receiving 22.00 / 22.29. No parameters were tuned using these results. The 2026 season was not used. These are development backtests, not independent final validation or measured betting ROI.
+Regular-season candidate rows by week, 2023-2025 pooled:
 
-## Persisted and verified
+| Week | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Before | 0 | 0 | 15 | 505 | 2,136 | 2,829 | 3,680 |
+| After | 5,385 | 5,639 | 6,121 | 7,075 | 7,429 | 7,286 | 8,279 |
 
-- 131,440 normalized offensive player-category rows from 2021–2025, with 111,808 belonging to FBS-versus-FBS games used in this pipeline.
-- Nine chronological model runs, Neon IDs 17–25. Each test year trains only on earlier seasons. The 2025 fold's models therefore train through 2024, not through 2025.
-- 47,384 pre-result candidate projections: 33,771 graded and 13,613 ungraded.
-- Feature values, projected opportunity and yards, trailing-five baseline, nullable observed outcomes, and model parameters stored in `cfb_model_v1.player_predictions` / `prediction_runs`.
-- Readable scaling/coefficient snapshots saved locally; round-trip tests reproduce the fitted model's predictions.
-- Twenty passing automated tests, including candidate eligibility without future player knowledge, same-day/future leakage, missing outcomes, season/team resets, stale history, parser checks, and saved-model reproducibility.
+The extra coverage is not bought with accuracy. Scored on only the rows that
+were *already* eligible, the carryover model is better in all three categories
+(passing -0.342, receiving -0.291, rushing -0.048 MAE). On the newly unlocked
+rows it beats the trailing-five baseline by 7.47 (passing), 2.38 (rushing) and
+0.84 (receiving).
 
-## Scope matters
+## Participation
 
-Candidates require three prior same-team, same-season **FBS-versus-FBS category appearances**, with the last appearance within 45 days. Trailing-five average volume must be at least five passing attempts, three carries, or one reception. Features and candidates are created before the prediction date's outcomes are joined. Histories are not carried across teams or seasons. Early-season players, new roles, freshmen, and transfers without sufficient new-team history are consequently outside this first model's coverage.
+Walk-forward, trained only on earlier seasons. The label is "a box score
+recorded this category" - **not** confirmed availability, and not an injury model.
 
-The model forecasts volume and efficiency separately. Receiving volume means receptions, **not targets**. Pregame context uses prior-date score ratings and opponent pass/rush allowance. Training is standardized using earlier-season rows only; efficiency regression is weighted by observed positive volume.
+| Category | Candidates | Records a stat | AUC | Brier | vs base rate |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Passing | 9,869 | 46% | 0.925 | 0.095 | +60% skill |
+| Rushing | 29,097 | 50% | 0.914 | 0.102 | +59% skill |
+| Receiving | 62,643 | 41% | 0.883 | 0.124 | +46% skill |
 
-Missing category rows are **not** zero yards and are **not** declared DNPs. A missing receiving row might mean zero catches, injury, changed usage, incomplete reporting, or another cause. The 13,613 ungraded candidates must not be ignored when assessing production usefulness: the reported accuracy is conditional on an observed category entry and may not carry over to real sportsbook populations. Confirmed zero-stat handling and availability are prerequisites for trustworthy market probabilities.
+Calibration is close across the full range; receiving deciles run
+0.007/0.009, 0.013/0.014, 0.029/0.027 ... 0.908/0.907 predicted versus observed.
 
-The 2022 Buffalo–Akron game (401506450) lacks usable offensive player records for both teams. This is explicitly logged under the bounded `--allow-missing-games` override. It contributes no fabricated player performance. All other FBS-versus-FBS game/team pairs had some offensive player observations; this does not prove every individual participant was reported.
+Scoring an absence as zero yards - one grading convention, not a settlement
+rule - the unconditional projection roughly halves error:
 
-Raw source data is retrospective and may include provider revisions. UTC date is the cutoff proxy, not a verified provider-publication timestamp. Results do not establish calibrated uncertainty, over/under accuracy, profitability, or readiness for automatic recommendations. No live 2026 forecasts were issued.
+| Category | Conditional only | Unconditional | Change |
+| --- | ---: | ---: | ---: |
+| Passing | 95.67 | 50.75 | -47% |
+| Rushing | 26.98 | 16.60 | -38% |
+| Receiving | 23.93 | 12.38 | -48% |
 
-## Next step
+Thresholding on the probability gives a principled abstention rule in place of
+the previous blanket abstain. At a 0.85 threshold, the share of retained
+candidates that actually record a stat rises from roughly 40% to 90-93%.
 
-Resolve participation and zero-stat outcomes as far as the available data permits, and measure remaining coverage gaps. Then develop and validate yardage distributions / interval coverage on chronological splits. Only after that should sportsbook player identity, line timestamps, over/under probabilities, and price comparisons be connected. Retain explicit abstention when a player's availability or grading basis is unknown.
+## Release validation
+
+Trained through 2024, calibrated on 2025, evaluated on 2026 through week 5:
+
+| Category | Model MAE | Trailing-five MAE | Participation AUC |
+| --- | ---: | ---: | ---: |
+| Passing | 67.49 | 73.53 | 0.849 |
+| Rushing | 25.31 | 28.72 | 0.870 |
+| Receiving | 21.18 | 22.03 | 0.821 |
+
+All three now beat the baseline on 2026. Under the previous model passing
+(60.87 vs 57.65) and receiving (26.16 vs 24.00) both lost to it. The 2026 sample
+is 244/830/1,344 graded rows and is not large enough for a strong claim, but it
+was not used to select or tune anything.
+
+## Tested and rejected
+
+| Change | Result | Decision |
+| --- | --- | --- |
+| EWMA trailing window (14d/21d/35d) | +0.17 to +0.45 MAE, every category and half-life | Rejected |
+| Teammate volume share and team volume | +0.006 to +0.063 MAE | Rejected |
+| Context from the rebuilt game ratings | +0.076 / -0.006 / +0.025, inconsistent | Rejected for POU |
+| Market-informed context (closing line as game script) | -0.206 / +0.006 / -0.024, noise-level | Rejected |
+
+The rebuilt game ratings still ship, on the game model's own merit; they simply
+do not move POU, whose features are dominated by a player's own recent history.
+
+## Still outstanding
+
+Participation is not availability. These projections remain research output:
+identity is unverified against any sportsbook, grading rules are unconfirmed,
+and no ROI is computed. `market_ready` stays false and the database still
+enforces it.
 
 ## Reproduce
 
 ```sh
-python -m cfb.cli migrate
-python -m cfb.cli player-history --years 2021 2022 2023 2024 2025
-python -m cfb.cli pou-backtest --years 2023 2024 2025 --allow-missing-games
-python -m unittest discover -s tests -v
+python -m cfb.cli pou-backtest --years 2023 2024 2025 2026 --allow-missing-games
+python -m cfb.cli train-release
 ```
-
-Consolidated comparison: `outputs/pou_comparison_25/`. Per-run CSVs, configuration, metrics, and parameter snapshots: `outputs/run_17/` through `outputs/run_25/`. `outputs/player_ingestion_audit.json` records returned-game coverage and incomplete player metric pairs; the backtest quality report separately records games that returned no usable offensive players. Future reruns receive new IDs.

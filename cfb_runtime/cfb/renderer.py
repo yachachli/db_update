@@ -1,4 +1,10 @@
-"""Public NFL-style contract; diagnostic evidence belongs in internal tracking."""
+"""Public NFL-style contract; diagnostic evidence belongs in internal tracking.
+
+The field list stays exactly as the shared backend expects. Participation is
+reported through the existing free-text fields rather than a new key, because
+projecting yardage for a player who is unlikely to record the stat at all is
+misleading, and adding a top-level field would be a contract change.
+"""
 import math
 
 
@@ -28,6 +34,16 @@ def render_analysis(result):
         if isinstance(volume, (int, float)) and math.isfinite(volume):
             unit = {'pass yards': 'pass attempts', 'rush yards': 'carries', 'rec yards': 'receptions'}[stat]
             insights.append(f"Estimated volume: {volume:.1f} {unit}; includes opponent-adjusted game context.")
+        play = result.get('participation_probability')
+        if isinstance(play, (int, float)) and not isinstance(play, bool) and math.isfinite(play):
+            insights.append(f"Projection assumes {name} records a {stat} stat; estimated "
+                            f"{play:.0%} chance of that, for {play * point:.1f} yards unconditionally.")
+            if play < 0.5:
+                # A sub-coin-flip chance of recording the stat is the headline,
+                # not a footnote under a confident-looking yardage number.
+                short = (f"{name}: likely no {stat} recorded against {opponent} "
+                         f"({play:.0%} chance). Conditional projection {point:.1f} if they do.")
+                side = None
     else:
         short = f"No projection available for {name}."
         insights = ['Insufficient eligible player history for this matchup.']

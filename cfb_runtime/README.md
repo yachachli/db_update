@@ -12,6 +12,7 @@ Use Python 3.12 for the pinned v1 runtime, create a virtual environment, and run
 python -m cfb.cli migrate
 python -m cfb.cli games --years 2021 2022 2023 2024 2025 2026
 python -m cfb.cli players --year 2025 --week 1
+python -m cfb.cli lines --years 2021 2022 2023 2024 2025 2026
 python -m cfb.cli odds
 python -m cfb.cli backtest --test-year 2025
 python -m cfb.cli team-stats --years 2021 2022 2023 2024 2025

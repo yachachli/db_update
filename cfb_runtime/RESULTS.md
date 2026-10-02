@@ -1,47 +1,103 @@
-# Opponent-adjusted efficiency: first comparison
+# Game model: market benchmark and rating rebuild
 
-Completed September 30, 2026. All nine evaluation runs and their input features are saved in Neon `cfb_model_v1` (run IDs 2–10).
+Updated October 2, 2026. Supersedes the September 30 opponent-adjusted efficiency
+comparison, whose conclusion (do not promote either efficiency variant) still stands.
 
-## Outcome
+## The headline finding
 
-The new ratings are implemented, but the expanded model does **not** outperform the score-only baseline overall. Keep `score-ridge-v0` as the benchmark; do not promote either efficiency variant on this evidence.
+The game model carries **no information the closing line has not already priced.**
+Regressing actual margin on both the consensus closing line and the model's own
+forecast, over the same 2,398 FBS-versus-FBS games from 2023-2025:
 
-Results pooled over 2,398 distinct evaluation games across 2023–2025 (errors in points; lower is better):
+| term | coefficient | std. error | t |
+| --- | ---: | ---: | ---: |
+| market margin | 0.9906 | 0.0428 | 23.12 |
+| model margin | 0.0346 | 0.0492 | 0.70 |
+
+The market coefficient is indistinguishable from one; the model coefficient is
+indistinguishable from zero. Blending the model into the line changes
+out-of-sample error by +0.001 points, which is nothing.
+
+This was re-tested after the rating rebuild below, which cut model margin error
+by more than half a point. The model coefficient **fell** to -0.0221 (t = -0.31).
+Making the model more accurate did not make it more informative about the line.
+
+**Therefore: no betting edge is demonstrated, and none should be claimed.** More
+features of the same kind - opponent-adjusted season aggregates built from box
+scores - are not a promising route to one. A future edge claim has to be measured
+as error against the closing line, not as raw MAE, and this file is where that
+measurement belongs.
+
+## Rating rebuild
+
+Two changes, both validated on held-out 2026 data that was used for no tuning:
+
+1. **Separate regularization for margin and total.** Margin is a difference of
+   four team coefficients, so shrinkage pulls every matchup toward a coin flip.
+   Total is a sum, which benefits from much heavier shrinkage. One shared alpha
+   was a compromise that suited neither. Margin now fits at alpha 0.2, total at
+   alpha 20. Both are interior optima, not grid edges.
+2. **Recency decays on days, not seasons.** The previous `0.45 ** (year - season)`
+   step weighted a week-1 game exactly like a week-13 game. Replaced with a
+   240-day half-life. Lookback widened from 2 seasons to 3.
+
+Pooled over 2,398 games, 2023-2025 (chronological development folds):
 
 | Model | Margin MAE | Total MAE | Winner accuracy |
 | --- | ---: | ---: | ---: |
-| Score-only baseline | 13.346 | 12.968 | 69.60% |
-| Baseline + unadjusted efficiency | 13.388 | 13.015 | 69.39% |
-| Baseline + opponent-adjusted efficiency | 13.372 | 13.018 | 69.39% |
+| Previous `score-ridge-v0` | 13.345 | 12.967 | 69.64% |
+| Current `score-ridge-v1` | 12.804 | 12.919 | 70.73% |
+| Consensus closing line | 12.000 | 12.685 | 72.49% |
 
-Opponent-adjusted margin MAE by season: 13.171 (2023), 13.748 (2024), 13.197 (2025). Score-only comparison: 13.345, 13.640, 13.055. The gains are not consistent across seasons, and no significance or betting-edge claim is made. These are chronological development folds: later folds train on earlier evaluation seasons once those seasons are in the past.
+Paired bootstrap over 4,000 resamples: margin -0.541, 95% CI [-0.682, -0.393];
+total -0.048, 95% CI [-0.082, -0.011]. Margin improves in all three seasons
+independently (-0.519, -0.558, -0.546).
 
-## Delivered
+### Held-out 2026
 
-- 9,092 team-game box scores stored for 2021–2025, including FCS matchups retained for future work.
-- Separate continuous passing/rushing offense and defensive-allowance ratings, jointly opponent-adjusted, attempt-weighted, and shrunk toward average.
-- Historical percentile brackets with low-exposure labels, derived for display rather than used as model inputs.
-- Identical evaluation-game sets for all models; train-only feature scaling for the efficiency models.
-- 7,194 prediction rows and 7,194 associated feature records across nine runs.
-- Eight passing automated tests covering temporal leakage, rating direction, missing values, zero attempts, parsing, caching, and API call budgets.
+The 2026 season through week 5 (217 completed FBS-versus-FBS games) was used for
+no tuning of any kind:
 
-## Data exception and limitations
+| Model | Margin MAE | Total MAE | Winner accuracy |
+| --- | ---: | ---: | ---: |
+| Previous `score-ridge-v0` | 14.370 | 12.184 | 73.73% |
+| Current `score-ridge-v1` | 12.566 | 12.167 | 80.18% |
+| Consensus closing line | 11.024 | - | 83.87% |
 
-Both team rows for 2022 Buffalo–Akron (game 401506450) lack offensive totals in CFBD's weekly and game-specific responses. An explicit, logged override excludes those observations from efficiency fitting without excluding the game's scoring target. Two of 7,888 FBS-versus-FBS team rows are affected. Missing values were not replaced with zero.
+The gain is larger out of sample than in development. 217 games is a small
+sample and the winner-accuracy figures in particular should not be read as a
+stable estimate, but the direction is consistent with the development folds.
 
-Box-score efficiency includes game-script and overtime effects and does not isolate sacks, garbage time, success rate, or explosiveness. Defensive allowance below zero indicates better defense. Sample exposure is not a statistical confidence interval. The historical rating export is dated before the last evaluation slate, not a live 2026 ranking. The 2026 season was not used in this comparison.
+## Tested and rejected
 
-## Next development step
+Each of these was implemented, measured on identical evaluation games, and
+reverted. They are recorded so they are not retried without new evidence.
 
-Add game-level success rate, explosiveness, and play-volume features with the same chronological checks; test incremental value against the unchanged baseline. Separately expand player-stat history and build a volume/efficiency POU baseline. This work has not yet trained the player-prop model, calibrated over/under probabilities, or measured sportsbook ROI. Keep future evaluation data separate from development decisions.
+| Change | Result | Decision |
+| --- | --- | --- |
+| Rest days / bye-week differential | margin 13.303 to 13.303; both together 13.322 | Rejected, no effect |
+| Replacing the two-stage map with the raw rating | margin 13.833 vs 13.303 | Rejected, the second stage is worth 0.530 |
+| Day half-life 120d | margin +0.122, inconsistent across seasons | Rejected |
+| Day half-life 180d | margin -0.048 but sign-flips in 2025 | Rejected for 240d, which is consistent |
+| Closing line as a model feature | margin 12.017, identical to the line alone | Not adopted; see below |
 
-## Reproduce and inspect
+The line as a feature produces a better predictor but the fitted coefficient on
+the ratings is zero, so it is the line wearing a model's clothes. It is recorded
+in `market_benchmark` on every backtest run rather than smuggled into the
+feature set.
+
+## Betting lines
+
+`cfb_model_v1.betting_lines` holds 15,411 provider quotes for 2021-2026, ingested
+through `python -m cfb.cli lines --years ...`. Coverage on the evaluation set is
+100% of games, median 3 books per game. `backtest.run` now records a
+`market_benchmark` block on every run so the comparison can never quietly lapse.
+
+## Reproduce
 
 ```sh
 python -m cfb.cli migrate
-python -m cfb.cli team-stats --years 2021 2022 2023 2024 2025
-python -m cfb.cli efficiency-backtest --years 2023 2024 2025 --allow-missing-stats
-python -m unittest discover -s tests -v
+python -m cfb.cli lines --years 2021 2022 2023 2024 2025 2026
+python -m cfb.cli backtest --test-year 2025
+python -m unittest discover -s tests
 ```
-
-Local run reports are in `outputs/run_2/` through `outputs/run_10/`. The consolidated comparison, quality exception, and historical ratings are in `outputs/efficiency_comparison_10/`. Each rerun creates new IDs.

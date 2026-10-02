@@ -17,14 +17,17 @@ def parse(category, values):
     return volume,int(yards)
 
 
-def ingest(years, recent_partitions=None, refresh=False):
+def ingest(years, recent_partitions=None, refresh=False, partitions=None):
     client=Client(max_calls=300)
     reports=[]
     for year in years:
         with connect() as conn:
             rows=conn.execute('SELECT game_id,week,season_type,home_id,away_id,home_team,away_team,kickoff FROM cfb_model_v1.games WHERE completed AND season=%s',(year,)).fetchall()
         from cfb.partitions import recent
-        rows=recent(rows,recent_partitions)
+        rows=([r for r in rows if (r[1], r[2]) in {tuple(t) for t in partitions}]
+              if partitions is not None else recent(rows,recent_partitions))
+        if not rows:
+            continue
         games={r[0]:r for r in rows}; seen=set(); count=0; missing=[]
         for week,kind in sorted({(r[1],r[2]) for r in rows}):
             payload=client.get('/games/players',{'year':year,'week':week,'seasonType':kind,'classification':'fbs'},cache=not refresh)
