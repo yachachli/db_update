@@ -8,7 +8,7 @@ import pandas as pd
 import joblib
 from cfb.data import ROOT,connect
 from cfb.pou import candidates,COLS
-from cfb.backtest import rating_features
+from cfb.backtest import LOOKBACK_SEASONS, rating_features
 from cfb.efficiency import efficiency_features
 from cfb.release import predict,probability
 
@@ -58,7 +58,7 @@ def analyze_internal(request):
         history=conn.execute('''SELECT game_id,season,kickoff,home_id,away_id,neutral_site,home_points,away_points
         FROM cfb_model_v1.games WHERE completed AND kickoff<%s AND season BETWEEN %s AND %s
         AND home_classification='fbs' AND away_classification='fbs' AND home_points IS NOT NULL AND away_points IS NOT NULL ORDER BY kickoff''',
-        (cutoff.to_pydatetime(),target[1]-2,target[1])).fetchall()
+        (cutoff.to_pydatetime(),target[1]-LOOKBACK_SEASONS,target[1])).fetchall()
         games=pd.DataFrame(history,columns=['game_id','season','kickoff','home_id','away_id','neutral_site','home_points','away_points'])
         ids=games.game_id.tolist()
         players=pd.DataFrame(conn.execute('''SELECT game_id,player_id,team_id,player_name,category,volume,yards
