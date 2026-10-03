@@ -2,7 +2,7 @@
 from datetime import datetime, timezone
 import json
 import os
-from cfb.data import connect, ingest_games
+from cfb.data import connect, ingest_games, ingest_lines
 from cfb.partitions import recent
 
 
@@ -19,8 +19,8 @@ def plan(mode, season=None, lookback=3, analyses=0):
         raise ValueError('Unsupported season')
     return dict(mode=mode, season=year, recent_partitions=lookback,
                 analyses=analyses, retrain=False, market_ready=False,
-                stages=['schedule', 'team_stats', 'player_stats', 'coverage', 'repair', 'outcomes'] if mode == 'weekly'
-                else ['schedule', 'coverage', 'props', 'identities'])
+                stages=['schedule', 'team_stats', 'player_stats', 'lines', 'coverage', 'repair', 'outcomes']
+                if mode == 'weekly' else ['schedule', 'lines', 'coverage', 'props', 'identities'])
 
 
 def coverage(year, lookback):
@@ -125,6 +125,10 @@ def run(mode='weekly', season=None, lookback=3, analyses=0, dry_run=False):
                 elif stage == 'player_stats':
                     from cfb.players import ingest
                     ingest([year], recent_partitions=lookback, refresh=True)
+                elif stage == 'lines':
+                    # Closing lines are the benchmark every backtest reports
+                    # against, and upcoming games only get priced near kickoff.
+                    ingest_lines([year], refresh=True)
                 elif stage == 'coverage':
                     details['coverage'] = coverage(year, lookback)
                 elif stage == 'repair':
