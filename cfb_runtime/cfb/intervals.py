@@ -88,7 +88,7 @@ def run(run_ids):
         if {r[0] for r in raw}!=set(run_ids): raise ValueError('Missing source run')
         sources={}
         for rid,version,kind,config in raw:
-            if version!='pou-volume-efficiency-v0' or kind!='player_backtest' or 'model_parameters' not in config:
+            if version not in ('pou-volume-efficiency-v0','pou-volume-efficiency-v1') or kind!='player_backtest' or 'model_parameters' not in config:
                 raise ValueError('Only saved v0 player models supported')
             key=(config['test_year'],config['category'])
             if key in sources: raise ValueError('Ambiguous duplicate season/category run')

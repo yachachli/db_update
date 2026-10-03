@@ -2,7 +2,7 @@
 from datetime import datetime, timezone
 import json
 import os
-from cfb.data import connect, ingest_games
+from cfb.data import connect, ingest_games, ingest_lines
 from cfb.partitions import recent
 
 
@@ -19,11 +19,12 @@ def plan(mode, season=None, lookback=3, analyses=0):
         raise ValueError('Unsupported season')
     return dict(mode=mode, season=year, recent_partitions=lookback,
                 analyses=analyses, retrain=False, market_ready=False,
-                stages=['schedule', 'team_stats', 'player_stats', 'coverage', 'outcomes'] if mode == 'weekly'
-                else ['schedule', 'coverage', 'props', 'identities'])
+                stages=['schedule', 'team_stats', 'player_stats', 'lines', 'coverage', 'repair', 'outcomes']
+                if mode == 'weekly' else ['schedule', 'lines', 'coverage', 'props', 'identities'])
 
 
 def coverage(year, lookback):
+    """Split gaps the bounded refresh can heal from a backlog it structurally cannot."""
     with connect() as conn:
         history = conn.execute('''SELECT season,count(*) FROM cfb_model_v1.games
             WHERE completed AND season BETWEEN %s AND %s
@@ -31,10 +32,11 @@ def coverage(year, lookback):
             AND home_classification='fbs' AND away_classification='fbs' GROUP BY season''', (year-2, year-1)).fetchall()
         if any(dict(history).get(season, 0) < 100 for season in (year-2, year-1)):
             raise ValueError('Historical bootstrap required before weekly operation')
+        # Window selection must match what team_stats/players actually refresh.
+        schedule = conn.execute('''SELECT game_id,week,season_type,kickoff FROM cfb_model_v1.games
+            WHERE season=%s AND completed''', (year,)).fetchall()
         rows = conn.execute('''SELECT game_id,week,season_type,kickoff FROM cfb_model_v1.games
             WHERE season=%s AND completed AND home_classification='fbs' AND away_classification='fbs' ''', (year,)).fetchall()
-        # Refresh a bounded tail, but do not declare a partially bootstrapped
-        # current season healthy just because its latest weeks are present.
         ids = [r[0] for r in rows]
         incomplete = conn.execute('''SELECT g.game_id FROM cfb_model_v1.games g WHERE g.game_id=ANY(%s)
             AND (EXISTS(SELECT 1 FROM (VALUES(g.home_id),(g.away_id)) AS t(team_id)
@@ -44,11 +46,34 @@ def coverage(year, lookback):
                      AND s.rush_yards IS NOT NULL AND s.rush_attempts IS NOT NULL)
                 OR NOT EXISTS(SELECT 1 FROM cfb_model_v1.player_offense p
                    WHERE p.game_id=g.game_id AND p.team_id=t.team_id))) ORDER BY g.game_id''', (ids,)).fetchall()
-    report = dict(completed_games_checked=len(ids), incomplete_game_ids=[r[0] for r in incomplete])
-    if incomplete:
+    missing = {r[0] for r in incomplete}
+    window = {r[0] for r in recent(schedule, lookback)}
+    partition = {r[0]: [r[1], r[2]] for r in rows}
+    blocking = sorted(missing & window)
+    backlog = sorted(missing - window)
+    report = dict(completed_games_checked=len(ids), refresh_window_partitions=lookback,
+                  incomplete_game_ids=blocking, stale_backlog_game_ids=backlog,
+                  stale_backlog_partitions=sorted({tuple(partition[g]) for g in backlog}))
+    report['stale_backlog_partitions'] = [list(p) for p in report['stale_backlog_partitions']]
+    if blocking or backlog:
         print(json.dumps(report), flush=True)
-        raise ValueError('Recent game coverage incomplete; downstream stages blocked')
+    if blocking:
+        # The refresh just ran over these partitions, so a gap here is a real failure.
+        raise ValueError('Coverage incomplete inside the refresh window; downstream stages blocked')
     return report
+
+
+def repair(year, partitions, limit=2):
+    """Re-ingest a bounded slice of the out-of-window backlog so it drains over runs."""
+    targets = [tuple(p) for p in partitions][:max(0, limit)]
+    if not targets:
+        return dict(repaired_partitions=[], remaining_partitions=0)
+    from cfb.team_stats import ingest as team_ingest
+    from cfb.players import ingest as player_ingest
+    team_ingest([year], partitions=targets, refresh=True)
+    player_ingest([year], partitions=targets, refresh=True)
+    return dict(repaired_partitions=[list(t) for t in targets],
+                remaining_partitions=max(0, len(partitions) - len(targets)))
 
 
 def run(mode='weekly', season=None, lookback=3, analyses=0, dry_run=False):
@@ -73,10 +98,19 @@ def run(mode='weekly', season=None, lookback=3, analyses=0, dry_run=False):
         if not guard.execute('SELECT pg_try_advisory_xact_lock(719104211)').fetchone()[0]:
             raise RuntimeError('Another CFB pipeline is already running')
         with connect() as conn:
+            # Holding the lock proves nothing else is running, so any surviving
+            # 'running' row is from a run the job timeout killed before its handler.
+            abandoned = conn.execute('''UPDATE cfb_model_v1.pipeline_runs SET status='abandoned',
+                finished_at=clock_timestamp(), error_type='process_terminated'
+                WHERE status='running' RETURNING id''').fetchall()
+            if abandoned:
+                print(json.dumps(dict(abandoned_runs=[r[0] for r in abandoned])), flush=True)
+        with connect() as conn:
             run_id = conn.execute('''INSERT INTO cfb_model_v1.pipeline_runs(mode,season,status,details)
                 VALUES (%s,%s,'running',%s) RETURNING id''',
                 (mode, config['season'], json.dumps(config))).fetchone()[0]
         details = dict(config)
+        stage = None
         try:
             for stage in config['stages']:
                 with connect() as conn:
@@ -91,8 +125,14 @@ def run(mode='weekly', season=None, lookback=3, analyses=0, dry_run=False):
                 elif stage == 'player_stats':
                     from cfb.players import ingest
                     ingest([year], recent_partitions=lookback, refresh=True)
+                elif stage == 'lines':
+                    # Closing lines are the benchmark every backtest reports
+                    # against, and upcoming games only get priced near kickoff.
+                    ingest_lines([year], refresh=True)
                 elif stage == 'coverage':
                     details['coverage'] = coverage(year, lookback)
+                elif stage == 'repair':
+                    details['repair'] = repair(year, details.get('coverage', {}).get('stale_backlog_partitions', []))
                 elif stage == 'outcomes':
                     from cfb.tracking import run as track
                     details['outcomes'] = track()

@@ -48,14 +48,60 @@ class POUTests(unittest.TestCase):
         self.assertTrue(pd.isna(row.actual_yards))
         self.assertTrue(pd.isna(row.actual_volume))
 
-    def test_season_and_team_reset_history(self):
-        games,obs,ctx=fixture()
-        games.loc[games.game_id>=3,'season']=2025
-        self.assertTrue(candidates(games,obs,ctx).empty)
+    def test_changing_team_still_resets_history(self):
+        # A transfer means a new role and system: that history must not carry.
         games,obs,ctx=fixture()
         games.loc[games.game_id>=3,'home_id']=3
         obs.loc[obs.game_id>=3,'team_id']=3
         self.assertTrue(candidates(games,obs,ctx).empty)
+
+    def test_history_carries_across_seasons_on_the_same_team(self):
+        # A returning starter is eligible in week one; season-keyed history
+        # blacked out the opening weeks of every season.
+        games,obs,ctx=fixture()
+        games.loc[games.game_id>=3,'season']=2025
+        games.loc[games.game_id>=3,'kickoff']=games.loc[games.game_id>=3,'kickoff']+pd.Timedelta(days=330)
+        result=candidates(games,obs,ctx)
+        self.assertEqual(result.game_id.tolist(),[3,4,5])
+        first=result.iloc[0]
+        self.assertEqual(first.same_season_history,0.0)
+        self.assertEqual(first.in_season_games,0.0)
+        self.assertEqual(result.iloc[-1].same_season_history,1.0)
+
+    def test_offseason_gap_limit_still_excludes_a_vanished_player(self):
+        # Last seen two seasons ago and never since: carryover must not revive them.
+        games,obs,ctx=fixture()
+        games.loc[games.game_id>=3,'season']=2026
+        games.loc[games.game_id>=3,'kickoff']=games.loc[games.game_id>=3,'kickoff']+pd.Timedelta(days=800)
+        self.assertTrue(candidates(games,obs[obs.game_id<3],ctx).empty)
+
+    def test_returning_after_one_offseason_is_still_eligible(self):
+        games,obs,ctx=fixture()
+        games.loc[games.game_id>=3,'season']=2025
+        games.loc[games.game_id>=3,'kickoff']=games.loc[games.game_id>=3,'kickoff']+pd.Timedelta(days=330)
+        self.assertEqual(candidates(games,obs[obs.game_id<3],ctx).game_id.tolist(),[3,4,5])
+
+    def test_transfer_does_not_duplicate_a_candidate(self):
+        # Cross-season history must not leave a transferred player enumerated for
+        # both teams, which produced duplicate primary keys against real data.
+        games=pd.DataFrame([dict(game_id=i,season=2024 if i<4 else 2025,
+                                 kickoff=pd.Timestamp('2024-09-01',tz='UTC')+pd.Timedelta(days=120*i),
+                                 home_id=1,away_id=2) for i in range(8)])
+        obs=pd.DataFrame([dict(game_id=i,player_id='p1',team_id=1 if i<4 else 2,player_name='Mover',
+                               category='rushing',volume=10,yards=50) for i in range(8)])
+        ctx=pd.DataFrame([dict(game_id=i,margin_rating=3,total_rating=50,home_pass_allowance=0,
+                               away_pass_allowance=0,home_rush_allowance=0,away_rush_allowance=0) for i in range(8)])
+        result=candidates(games,obs,ctx)
+        keys=result[['game_id','player_id','category']]
+        self.assertEqual(len(keys),len(keys.drop_duplicates()))
+        after=result[result.game_id>=7]
+        self.assertTrue((after.team_id==2).all())
+
+    def test_participation_label_marks_absent_outcomes(self):
+        games,obs,ctx=fixture()
+        result=candidates(games,obs[obs.game_id!=5],ctx)
+        self.assertEqual(result.loc[result.game_id==5,'participated'].iloc[0],0.0)
+        self.assertEqual(result.loc[result.game_id==4,'participated'].iloc[0],1.0)
 
     def test_future_new_player_not_candidate(self):
         games,obs,ctx=fixture()

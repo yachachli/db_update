@@ -22,13 +22,16 @@ def normalize(team):
     return integer('netPassingYards'), attempts, integer('rushingYards'), rush_attempts
 
 
-def ingest(years, recent_partitions=None, refresh=False):
+def ingest(years, recent_partitions=None, refresh=False, partitions=None):
     client = Client(max_calls=300)
     for year in years:
         with connect() as conn:
             games = conn.execute('SELECT game_id,week,season_type,home_id,away_id,kickoff FROM cfb_model_v1.games WHERE season=%s AND completed', (year,)).fetchall()
         from cfb.partitions import recent
-        games = recent(games, recent_partitions)
+        games = ([g for g in games if (g[1], g[2]) in {tuple(t) for t in partitions}]
+                 if partitions is not None else recent(games, recent_partitions))
+        if not games:
+            continue
         known = {g[0]: g for g in games}
         inserted = 0
         for week, kind in sorted({(g[1], g[2]) for g in games}):

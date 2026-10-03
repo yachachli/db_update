@@ -5,8 +5,8 @@ import numpy as np
 import pandas as pd
 import joblib
 from sklearn.ensemble import HistGradientBoostingRegressor
-from sklearn.metrics import mean_absolute_error
-from cfb.pou import COLS,fit_predict,predict_snapshot
+from sklearn.metrics import brier_score_loss,mean_absolute_error,roc_auc_score
+from cfb.pou import COLS,fit_predict,participation_model,predict_snapshot
 from cfb.intervals import residual_quantile
 from cfb.data import ROOT,connect
 
@@ -54,8 +54,10 @@ def train():
     path=ROOT/'outputs/candidate_features_through_2026.csv'
     frame=pd.read_csv(path,dtype={'player_id':str},parse_dates=['kickoff','data_cutoff'])
     output=ROOT/'models/saved/pou_v1'; output.mkdir(parents=True,exist_ok=True)
-    manifest={'version':'cfb-pou-v1','selection_season':2023,'calibration_season':2025,'analysis_season':2026,
-              'population':'prior-history FBS category candidates; probabilities conditional on explicit category observations',
+    manifest={'version':'cfb-pou-v2','selection_season':2023,'calibration_season':2025,'analysis_season':2026,
+              'population':'prior-history FBS category candidates, history carried across seasons on the same team',
+              'projection':'projected_value is conditional on a recorded category outcome; '
+                           'unconditional_projected_value multiplies it by the participation probability',
               'market_ready':False,'categories':{}}
     results=[]
     for category in ('passing','rushing','receiving'):
@@ -72,9 +74,15 @@ def train():
             test=group[group.season==year].copy()
             if calibration.kickoff.max()>=test.data_cutoff.min(): raise ValueError('Calibration overlaps forecast cutoff')
             model=fit(chosen,training)
+            # Participation trains on every candidate, not just graded rows: the
+            # absences are the label. Same chronological cutoff as the yardage model.
+            play=participation_model(group[group.season<=year-2])
+            test_play=play.predict_proba(test[COLS])[:,1]
             cv,cp=predict(model,calibration); volume,point=predict(model,test)
             residuals=(calibration.actual_yards.to_numpy()-cp)/np.sqrt(np.maximum(cv,1))
             q=residual_quantile(np.abs(residuals),.9)
+            test['participation_probability']=test_play
+            test['unconditional_prediction']=test_play*point
             test['prediction']=point
             test['lower90']=point-q*np.sqrt(np.maximum(volume,1)); test['upper90']=point+q*np.sqrt(np.maximum(volume,1))
             test['reference_line']=np.floor(test.yards_mean)+.5
@@ -92,6 +100,13 @@ def train():
                      'baseline_mae':float(mean_absolute_error(known.actual_yards,known.yards_mean)),
                      'coverage90':float(((known.actual_yards>=known.lower90)&(known.actual_yards<=known.upper90)).mean()),
                      'mean_width90':float((known.upper90-known.lower90).mean()),
+                     'participation_rate':float(test.participated.mean()),
+                     'participation_auc':float(roc_auc_score(test.participated,test_play))
+                        if test.participated.nunique()>1 else None,
+                     'participation_brier':float(brier_score_loss(test.participated,test_play)),
+                     'participation_base_rate_brier':float(test.participated.mean()*(1-test.participated.mean())),
+                     'zero_filled_conditional_mae':float(mean_absolute_error(test.actual_yards.fillna(0.0),point)),
+                     'zero_filled_unconditional_mae':float(mean_absolute_error(test.actual_yards.fillna(0.0),test.unconditional_prediction)),
                      'synthetic_line_brier':float(np.mean((known.over_probability-y)**2)),
                      'calibration_base_rate_brier':float(np.mean((cal_rate-y)**2)),
                      'reliability_bins':bins,'market_ready':False,
@@ -103,7 +118,7 @@ def train():
                     'no_tuning_on_2025_or_2026':True,'line_rule':'floor(trailing5_yards_mean)+0.5'}
             with connect() as conn:
                 rid=conn.execute('INSERT INTO cfb_model_v1.prediction_runs(model_version,kind,configuration,metrics) VALUES (%s,%s,%s,%s) RETURNING id',
-                    ('cfb-pou-v1','release_validation',json.dumps(config),json.dumps(metrics))).fetchone()[0]
+                    ('cfb-pou-v2','release_validation',json.dumps(config),json.dumps(metrics))).fetchone()[0]
                 with conn.pipeline():
                     for r in test.itertuples():
                         conn.execute('INSERT INTO cfb_model_v1.release_predictions VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
@@ -117,13 +132,18 @@ def train():
             if year==2026:
                 artifact=output/f'{category}_{rid}.joblib'
                 joblib.dump(model,artifact)
+                play_artifact=output/f'{category}_{rid}_participation.joblib'
+                joblib.dump(play,play_artifact)
                 calibration_path=output/f'{category}_{rid}_calibration.json'
                 calibration_path.write_text(json.dumps({'residuals':residuals.tolist(),'q90':q,'n':len(calibration),
                     'volume_low':float(np.quantile(cv,.01)),'volume_high':float(np.quantile(cv,.99)),
                     'width90_limit':float(np.quantile(2*q*np.sqrt(np.maximum(cv,1)),.9)),
                     'last_calibration_kickoff':str(calibration.kickoff.max())}))
                 manifest['categories'][category]={'kind':chosen,'artifact':artifact.name,'sha256':hashlib.sha256(artifact.read_bytes()).hexdigest(),
-                    'calibration':calibration_path.name,'validation_run_id':rid,'experimental':category=='receiving'}
+                    'calibration':calibration_path.name,'validation_run_id':rid,'experimental':category=='receiving',
+                    'participation_artifact':play_artifact.name,
+                    'participation_sha256':hashlib.sha256(play_artifact.read_bytes()).hexdigest(),
+                    'participation_auc':metrics['participation_auc']}
     (output/'manifest.json').write_text(json.dumps(manifest,indent=2))
     (ROOT/'outputs/release_validation.json').write_text(json.dumps(results,indent=2))
     print(f'Reusable artifacts: {output}',flush=True)

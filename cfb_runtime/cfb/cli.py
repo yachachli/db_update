@@ -1,5 +1,5 @@
 import argparse
-from cfb.data import migrate, ingest_games, ingest_players, snapshot_odds
+from cfb.data import migrate, ingest_games, ingest_lines, ingest_players, snapshot_odds
 
 
 def main():
@@ -15,6 +15,7 @@ def main():
     efficiency.add_argument('--allow-missing-stats',action='store_true',help='Explicitly skip missing efficiency observations, retaining all evaluation games; maximum 1 percent of team rows')
     players=sub.add_parser('players'); players.add_argument('--year',type=int,required=True); players.add_argument('--week',type=int,required=True)
     sub.add_parser('odds')
+    lines=sub.add_parser('lines'); lines.add_argument('--years',type=int,nargs='+',required=True)
     props=sub.add_parser('collect-props'); props.add_argument('--limit',type=int,default=5)
     props.add_argument('--analyze-limit',type=int,default=3)
     props.add_argument('--new-only',action='store_true',help='Skip previously analyzed game/player/market/line combinations')
@@ -91,6 +92,7 @@ def main():
     elif args.command=='pou-backtest':
         from cfb.pou import run
         run(args.years,args.allow_missing_games)
+    elif args.command=='lines': ingest_lines(args.years)
     elif args.command=='odds': snapshot_odds()
     elif args.command=='collect-props':
         from cfb.markets import collect

@@ -19,5 +19,21 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install -e . -c constraints-runtime.txt
+      - name: Verify vendored runtime integrity
+        # Detects a partial or hand-edited sync of the runtime copied from cfb-pou.
+        run: |
+          python - <<'PY'
+          import hashlib, json, pathlib, sys
+          manifest = json.loads(pathlib.Path('SOURCE_MANIFEST.json').read_text())
+          bad = [r for r, w in manifest.items()
+                 if not pathlib.Path(r).exists()
+                 or hashlib.sha256(pathlib.Path(r).read_bytes()).hexdigest() != w]
+          upstream = json.loads(pathlib.Path('UPSTREAM.json').read_text())
+          for key in ('commit', 'runtime_tree_sha256'):
+              if not upstream.get(key):
+                  bad.append(f'UPSTREAM.json missing {key}')
+          print(json.dumps({'checked': len(manifest), 'problems': bad}, indent=2))
+          sys.exit(1 if bad else 0)
+          PY
       - run: python -m unittest discover -s tests
       - run: python -m cfb.cli pipeline --dry-run

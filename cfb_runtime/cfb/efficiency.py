@@ -76,7 +76,7 @@ def efficiency_features(games, stats, adjusted=True, prediction_ids=None):
             records.append(record)
         latest = [{'data_cutoff':str(day),'team_id':team,'metric':metric,**values}
                   for metric,fit in fits.items() for team,values in fit.items()]
-    return pd.DataFrame(records), pd.DataFrame(latest)
+    return pd.DataFrame(records, columns=['game_id']+EXTRA), pd.DataFrame(latest)
 
 
 def bracket(percentile):
