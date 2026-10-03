@@ -89,7 +89,7 @@ def run(mode='weekly', season=None, lookback=3, analyses=0, dry_run=False):
             raise ValueError('Analyses are only supported in markets mode')
         from cfb.analyze import load_artifacts
         for category in ('passing', 'rushing', 'receiving'):
-            manifest, _, _, _ = load_artifacts(category)
+            manifest, _, _, _, _ = load_artifacts(category)
             if manifest['analysis_season'] != config['season']:
                 raise ValueError('Frozen model does not support this season')
     # Transaction-scoped lock is safe for Neon transaction pooling. Keep this

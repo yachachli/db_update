@@ -80,8 +80,8 @@ category absence is not zero; coverage only confirms game/team source presence.
 ## Frozen POU artifact deployment
 
 The repository does not commit binary models, raw caches, credentials or outputs.
-A private release asset `cfb-pou-v1-models.zip` plus its SHA-256 sidecar contains
-only the seven trusted model/manifest/calibration files. Download both from the
+A private release asset `cfb-pou-v2-models.zip` plus its SHA-256 sidecar contains
+all ten trusted yardage/participation model, manifest and calibration files. Download both from the
 approved private release, verify the archive hash, inspect its paths, and extract
 under the checked-out POU repository. Never load untrusted joblib/pickle artifacts.
 Do not install the game and POU packages into the same environment.
@@ -91,7 +91,7 @@ can freeze up to one new conditional research response per game. The initial
 db_update workflow explicitly uses **zero analyses** until artifact deployment is
 reviewed; it maintains stats, quotes, identity evidence and outcome tracking.
 It does not silently pretend that a fresh checkout has trained models. Artifact
-season is validated before inference. Version 1 supports the 2026 season only.
+season is validated before inference. Version 2 supports the 2026 season only.
 
 ## Release checklist
 
