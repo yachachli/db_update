@@ -1,0 +1,10 @@
+# Shared runtime for the four active NBA scheduled jobs.
+#
+# SQLAlchemy 2.1 changed the default ``postgresql://`` driver from psycopg2 to
+# psycopg 3.  These pipelines use psycopg2-binary, so keep the dialect and DBAPI
+# paired explicitly instead of allowing a resolver update to break every cron.
+SQLAlchemy==2.0.54
+psycopg2-binary==2.9.13
+pandas==3.0.6
+numpy==2.5.4
+requests==2.34.2

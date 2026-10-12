@@ -2,13 +2,16 @@ name: NBA Game Results Update
 
 on:
   schedule:
-    # 12:30 AM PST = 8:30 UTC (all west-coast games finished)
-    - cron: "30 8 * * *"
+    # All west-coast games should be finished. IANA timezone keeps this at the
+    # same Pacific wall-clock time across daylight-saving changes.
+    - cron: "37 0 * * *"
+      timezone: "America/Los_Angeles"
   workflow_dispatch:
 
 jobs:
   update-games:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Check out repository code
         uses: actions/checkout@v4
@@ -21,7 +24,8 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install sqlalchemy psycopg2-binary pandas requests
+          pip install -r requirements-nba-crons.txt
+          python -c "from sqlalchemy import create_engine; assert create_engine('postgresql://u:p@localhost/d').dialect.driver == 'psycopg2'"
 
       - name: Run game update pipeline
         env:
