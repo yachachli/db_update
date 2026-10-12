@@ -4,9 +4,11 @@ and upsert into nba_game_results in Neon.
 """
 
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 from sqlalchemy import text
+
+from nba_time import daily_fetch_dates
 
 from .db import get_engine, query_df
 from .tank01_client import Tank01Client
@@ -93,12 +95,9 @@ def run_game_update(engine, backfill_days: int = 0):
     if not api_key:
         raise RuntimeError("Set RAPIDAPI_KEY or TANK01_API_KEY")
 
-    pst = timezone(timedelta(hours=-8))
-    now_pst = datetime.now(pst)
-    yesterday = (now_pst - timedelta(days=1)).strftime("%Y%m%d")
-    today = now_pst.strftime("%Y%m%d")
+    now_pacific, yesterday, today = daily_fetch_dates()
 
-    print(f"[{now_pst.isoformat()}] NBA Game Update starting...")
+    print(f"[{now_pacific.isoformat()}] NBA Game Update starting...")
     print(f"  Fetching dates: {yesterday}, {today}")
 
     client = Tank01Client(api_key)
@@ -111,8 +110,8 @@ def run_game_update(engine, backfill_days: int = 0):
     # Optional backfill: check for missing dates
     if backfill_days > 0:
         print(f"\n  Checking for missing dates in last {backfill_days} days...")
-        start_date = now_pst - timedelta(days=backfill_days)
-        end_date = now_pst - timedelta(days=1)  # Don't backfill today, already fetched
+        start_date = now_pacific - timedelta(days=backfill_days)
+        end_date = now_pacific - timedelta(days=1)  # Don't backfill today, already fetched
         
         missing_dates = detect_missing_dates(engine, start_date, end_date)
         

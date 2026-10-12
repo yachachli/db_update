@@ -6,9 +6,11 @@ Should run BEFORE games start each day to capture closing lines.
 """
 
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from sqlalchemy import text
+
+from nba_time import game_date_from_commence
 
 from .db import get_engine, query_df
 from .odds_client import OddsClient, TEAM_NAME_TO_ABV
@@ -55,12 +57,7 @@ def run_odds_update(engine):
             if not home or not away:
                 continue
 
-            commence = event.get("commence_time", "")
-            try:
-                dt = datetime.fromisoformat(commence.replace("Z", "+00:00"))
-                game_date = (dt - timedelta(hours=5)).strftime("%Y-%m-%d")
-            except Exception:
-                game_date = datetime.now().strftime("%Y-%m-%d")
+            game_date = game_date_from_commence(event.get("commence_time", ""))
 
             spreads, mls, totals = [], [], []
             for bm in event.get("bookmakers", []):
