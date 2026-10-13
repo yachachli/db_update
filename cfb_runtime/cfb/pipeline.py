@@ -20,11 +20,22 @@ def plan(mode, season=None, lookback=3, analyses=0):
     return dict(mode=mode, season=year, recent_partitions=lookback,
                 analyses=analyses, retrain=False, market_ready=False,
                 stages=['schedule', 'team_stats', 'player_stats', 'lines', 'coverage', 'repair', 'outcomes']
-                if mode == 'weekly' else ['schedule', 'lines', 'coverage', 'props', 'identities'])
+                if mode == 'weekly'
+                # Coverage runs last in markets mode, and only reports. Odds
+                # collection does not read a single completed-game box score,
+                # but coverage used to gate it: two of six scheduled runs in
+                # October died at that stage and collected no lines at all,
+                # over a gap that had nothing to do with the odds provider.
+                else ['schedule', 'lines', 'props', 'identities', 'coverage'])
 
 
-def coverage(year, lookback):
-    """Split gaps the bounded refresh can heal from a backlog it structurally cannot."""
+def coverage(year, lookback, blocking=True):
+    """Split gaps the bounded refresh can heal from a backlog it structurally cannot.
+
+    ``blocking`` is True in weekly mode, where outcome tracking genuinely needs
+    complete box scores. In markets mode nothing downstream reads them, so the
+    report is recorded and the run continues.
+    """
     with connect() as conn:
         history = conn.execute('''SELECT season,count(*) FROM cfb_model_v1.games
             WHERE completed AND season BETWEEN %s AND %s
@@ -49,15 +60,16 @@ def coverage(year, lookback):
     missing = {r[0] for r in incomplete}
     window = {r[0] for r in recent(schedule, lookback)}
     partition = {r[0]: [r[1], r[2]] for r in rows}
-    blocking = sorted(missing & window)
+    blocking_gaps = sorted(missing & window)
     backlog = sorted(missing - window)
     report = dict(completed_games_checked=len(ids), refresh_window_partitions=lookback,
-                  incomplete_game_ids=blocking, stale_backlog_game_ids=backlog,
+                  incomplete_game_ids=blocking_gaps, stale_backlog_game_ids=backlog,
+                  gate_enforced=blocking,
                   stale_backlog_partitions=sorted({tuple(partition[g]) for g in backlog}))
     report['stale_backlog_partitions'] = [list(p) for p in report['stale_backlog_partitions']]
-    if blocking or backlog:
+    if blocking_gaps or backlog:
         print(json.dumps(report), flush=True)
-    if blocking:
+    if blocking_gaps and blocking:
         # The refresh just ran over these partitions, so a gap here is a real failure.
         raise ValueError('Coverage incomplete inside the refresh window; downstream stages blocked')
     return report
@@ -130,7 +142,7 @@ def run(mode='weekly', season=None, lookback=3, analyses=0, dry_run=False):
                     # against, and upcoming games only get priced near kickoff.
                     ingest_lines([year], refresh=True)
                 elif stage == 'coverage':
-                    details['coverage'] = coverage(year, lookback)
+                    details['coverage'] = coverage(year, lookback, blocking=mode == 'weekly')
                 elif stage == 'repair':
                     details['repair'] = repair(year, details.get('coverage', {}).get('stale_backlog_partitions', []))
                 elif stage == 'outcomes':

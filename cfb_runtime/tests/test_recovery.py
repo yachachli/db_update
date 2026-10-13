@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from cfb.backtest import rating_features
 from cfb.efficiency import efficiency_features
-from cfb.pipeline import coverage, repair
+from cfb.pipeline import coverage, plan, repair
 
 KICK = datetime(2026, 9, 5, tzinfo=timezone.utc)
 STATS = ['game_id', 'team_id', 'opponent_id', 'pass_yards', 'pass_attempts', 'rush_yards', 'rush_attempts']
@@ -47,6 +47,40 @@ class CoverageGateTests(unittest.TestCase):
         report = self.gate([])
         self.assertEqual(report['stale_backlog_game_ids'], [])
         self.assertEqual(report['completed_games_checked'], 8)
+
+
+class MarketsGateTests(unittest.TestCase):
+    """Odds collection must not depend on completed-game box scores.
+
+    Two of six scheduled markets runs in October died at the coverage stage and
+    collected no lines, over a stats gap the odds provider knows nothing about.
+    """
+
+    def gate(self, incomplete, blocking):
+        rows = schedule(2, 1) + schedule(2, 2, start=10) + schedule(2, 3, start=20) + schedule(2, 4, start=30)
+        with patch('cfb.pipeline.connect') as connect:
+            conn = connect.return_value.__enter__.return_value
+            conn.execute.return_value.fetchall.side_effect = [
+                [(2024, 700), (2025, 700)], rows, rows, [(g,) for g in incomplete]]
+            return coverage(2026, 3, blocking=blocking)
+
+    def test_weekly_still_blocks_on_an_in_window_gap(self):
+        with self.assertRaisesRegex(ValueError, 'inside the refresh window'):
+            self.gate([30], blocking=True)
+
+    def test_markets_reports_the_same_gap_without_blocking(self):
+        report = self.gate([30], blocking=False)
+        self.assertEqual(report['incomplete_game_ids'], [30])
+        self.assertFalse(report['gate_enforced'])
+
+    def test_markets_runs_coverage_after_props(self):
+        stages = plan('markets', 2026)['stages']
+        self.assertLess(stages.index('props'), stages.index('coverage'))
+        self.assertNotIn('repair', stages)
+
+    def test_weekly_still_gates_outcomes_on_coverage(self):
+        stages = plan('weekly', 2026)['stages']
+        self.assertLess(stages.index('coverage'), stages.index('outcomes'))
 
 
 class RepairTests(unittest.TestCase):
