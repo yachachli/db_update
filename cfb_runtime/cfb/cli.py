@@ -15,6 +15,12 @@ def main():
     efficiency.add_argument('--allow-missing-stats',action='store_true',help='Explicitly skip missing efficiency observations, retaining all evaluation games; maximum 1 percent of team rows')
     players=sub.add_parser('players'); players.add_argument('--year',type=int,required=True); players.add_argument('--week',type=int,required=True)
     sub.add_parser('odds')
+    directory=sub.add_parser('directory')
+    directory.add_argument('--verify',type=int,default=500,help='Probe at most this many unresolved headshots')
+    directory.add_argument('--all-positions',action='store_true',help='Include non-skill positions')
+    directory.add_argument('--recheck-missing',action='store_true',help='Re-probe players previously found to have no portrait')
+    directory.add_argument('--season',type=int,default=2026)
+    directory.add_argument('--fetch-rosters',type=int,default=0,help='Fetch rosters for up to N schools not yet covered')
     lines=sub.add_parser('lines'); lines.add_argument('--years',type=int,nargs='+',required=True)
     props=sub.add_parser('collect-props'); props.add_argument('--limit',type=int,default=5)
     props.add_argument('--analyze-limit',type=int,default=3)
@@ -93,6 +99,15 @@ def main():
         from cfb.pou import run
         run(args.years,args.allow_missing_games)
     elif args.command=='lines': ingest_lines(args.years)
+    elif args.command=='directory':
+        from cfb.directory import build_players, build_teams, verify_headshots
+        from cfb.directory import fetch_missing_rosters
+        build_teams()
+        if args.fetch_rosters:
+            fetch_missing_rosters(args.season, limit=args.fetch_rosters)
+        build_players(skill_only=not args.all_positions)
+        if args.verify:
+            verify_headshots(limit=args.verify, recheck_missing=args.recheck_missing)
     elif args.command=='odds': snapshot_odds()
     elif args.command=='collect-props':
         from cfb.markets import collect

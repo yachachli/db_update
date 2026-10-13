@@ -138,7 +138,11 @@ def run(mode='weekly', season=None, lookback=3, analyses=0, dry_run=False):
                     details['outcomes'] = track()
                 elif stage == 'props':
                     from cfb.markets import collect
-                    details['props'] = collect(10, analyses, new_only=True, per_game_limit=1)
+                    # A college Saturday is 40+ FBS games where an NFL week is
+                    # 16, and books post player props across midweek rather
+                    # than all at once, so ten events a run could never cover a
+                    # slate. One odds call per event keeps this bounded.
+                    details['props'] = collect(40, analyses, new_only=True, per_game_limit=1)
                 elif stage == 'identities':
                     from cfb.identity import run as identities
                     details['identities'] = identities(7)
