@@ -39,6 +39,7 @@ class MarketTests(unittest.TestCase):
     def test_invalid_budgets_rejected_before_io(self):
         with self.assertRaises(ValueError):
             collect(1, 1, per_game_limit=0)
-        for limit, analyses in [(0, 1), (11, 1), (1, 11), (1, -1)]:
+        # The event cap is 50: a college Saturday is 40+ FBS games.
+        for limit, analyses in [(0, 1), (51, 1), (1, 11), (1, -1)]:
             with self.assertRaises(ValueError):
                 collect(limit, analyses)

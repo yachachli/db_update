@@ -69,8 +69,11 @@ def quotes(event, captured):
 
 
 def collect(limit=5, analyze_limit=3, new_only=False, per_game_limit=10):
-    if not 1 <= limit <= 10 or not 0 <= analyze_limit <= 10:
-        raise ValueError('event limit must be 1..10 and analysis limit 0..10')
+    # A college Saturday is 40+ FBS games, where an NFL week is 16, so the
+    # research cap of ten events could not cover a slate. The odds budget stays
+    # proportional at one call per event plus the index.
+    if not 1 <= limit <= 50 or not 0 <= analyze_limit <= 10:
+        raise ValueError('event limit must be 1..50 and analysis limit 0..10')
     if not 1 <= per_game_limit <= 10:
         raise ValueError('per-game analysis limit must be 1..10')
     client = Client('odds', max_calls=1 + 3 * limit)
