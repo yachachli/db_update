@@ -6,6 +6,15 @@ on:
     # Daily: college books post player props across midweek rather than in
     # one drop, so the board is topped up as lines appear.
     - cron: '37 16 * * *'
+    # Friday night, the last sweep before the slate. Saturday lines are firm
+    # by Friday evening and the daily run happens nine hours earlier, so this
+    # is what catches the overnight moves and anything posted late.
+    - cron: '30 23 * * 5'
+    # Saturday midday, for the late slate. Eleven games kick at 16:00 UTC --
+    # before the daily run at 16:37 -- and another twenty-three go off from
+    # 19:30 onward. This collects after the early window has settled and in
+    # time for the generator's next pass to grade the evening games.
+    - cron: '30 17 * * 6'
   workflow_dispatch:
     inputs:
       mode:
@@ -46,7 +55,11 @@ jobs:
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
           # Fail safe: only the markets cron selects markets. Any edited or unknown
           # schedule falls back to weekly so ingestion can never silently stop.
-          CFB_JOB_MODE: ${{ inputs.mode || (github.event.schedule == '37 16 * * *' && 'markets' || 'weekly') }}
+          # Listed rather than compared one at a time: three schedules now mean
+          # markets, and an "or" chain is where one gets forgotten and silently
+          # runs as weekly. Anything unrecognised still falls back to weekly,
+          # which refreshes data rather than skipping it.
+          CFB_JOB_MODE: ${{ inputs.mode || (contains(fromJSON('["37 16 * * *","30 23 * * 5","30 17 * * 6"]'), github.event.schedule) && 'markets' || 'weekly') }}
         # Data/quotes only. Frozen artifacts must be deployed before enabling inference.
         run: python -m cfb.cli pipeline --mode "$CFB_JOB_MODE" --lookback 3 --analyses 0
       - name: Report a failed refresh
@@ -88,4 +101,8 @@ jobs:
               });
             }
         env:
-          CFB_JOB_MODE: ${{ inputs.mode || (github.event.schedule == '37 16 * * *' && 'markets' || 'weekly') }}
+          # Listed rather than compared one at a time: three schedules now mean
+          # markets, and an "or" chain is where one gets forgotten and silently
+          # runs as weekly. Anything unrecognised still falls back to weekly,
+          # which refreshes data rather than skipping it.
+          CFB_JOB_MODE: ${{ inputs.mode || (contains(fromJSON('["37 16 * * *","30 23 * * 5","30 17 * * 6"]'), github.event.schedule) && 'markets' || 'weekly') }}
