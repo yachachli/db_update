@@ -1,0 +1,30 @@
+name: Probe WNBA finality fields
+on:
+  workflow_dispatch:
+    inputs:
+      date:
+        description: Existing box-score date in YYYYMMDD format
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Inspect provider game fields without database access
+        env:
+          WNBA_API_KEY: ${{ secrets.WNBA_API_KEY }}
+          WNBA_API_HOST: ${{ secrets.WNBA_API_HOST }}
+          PROBE_DATE: ${{ inputs.date }}
+        run: python ops/probe_wnba_finality.py --date "$PROBE_DATE"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wnba-finality-probe
+          path: reports/wnba-finality-probe.json
+          retention-days: 7
