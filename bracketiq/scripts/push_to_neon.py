@@ -136,12 +136,12 @@ def _push_fanmatch(engine):
         return
     df = pd.read_parquet(path)
     keep = ["fanmatch_date", "Game", "PredictedWinner", "PredictedLoser", "PredictedMOV", "PredictedScore",
-            "Winner", "Loser", "WinnerScore", "LoserScore", "ActualMOV", "Location", "ThrillScore"]
+            "Winner", "Loser", "WinnerScore", "LoserScore", "ActualMOV", "Location", "ThrillScore", "ScheduledTimeET"]
     df = df[[c for c in keep if c in df.columns]]
     renames = {"Game": "game", "PredictedWinner": "predicted_winner", "PredictedLoser": "predicted_loser",
                "PredictedMOV": "predicted_mov", "PredictedScore": "predicted_score", "Winner": "winner", "Loser": "loser",
                "WinnerScore": "winner_score", "LoserScore": "loser_score", "ActualMOV": "actual_mov",
-               "Location": "location", "ThrillScore": "thrill_score"}
+               "Location": "location", "ThrillScore": "thrill_score", "ScheduledTimeET": "scheduled_time_et"}
     df = df.rename(columns={k: v for k, v in renames.items() if k in df.columns})
     _push(engine, "fanmatch_historical", df)
 
