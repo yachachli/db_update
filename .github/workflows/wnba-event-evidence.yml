@@ -1,0 +1,31 @@
+name: Retain WNBA event evidence
+on:
+  schedule:
+    - cron: '17 */4 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: wnba-event-evidence
+  cancel-in-progress: false
+jobs:
+  collect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: python -m unittest discover -s tests -p test_wnba_event_evidence.py -v
+      - run: pip install -r requirements-nba-crons.txt
+      - name: Append independent schedule and final-status observations
+        env:
+          DB_URL: ${{ secrets.DB_URL }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASS: ${{ secrets.DB_PASS }}
+          DB_HOST: ${{ secrets.DB_HOST }}
+          WNBA_API_KEY: ${{ secrets.WNBA_API_KEY }}
+          WNBA_API_HOST: ${{ secrets.WNBA_API_HOST }}
+        run: python -m wnba_events
