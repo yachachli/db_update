@@ -214,7 +214,10 @@ class FanMatch:
             _safe_pred_mov(x) for x in fm_df.PredictedScore.astype("str").str.split("-")
         ]
 
-        fm_df.drop(["Prediction", "Time (ET)"], axis=1, inplace=True)
+        # Preserve the provider's raw schedule/status cell for independent
+        # evidence collection. Never infer a kickoff from the date alone.
+        fm_df.rename(columns={"Time (ET)": "ScheduledTimeET"}, inplace=True)
+        fm_df.drop(["Prediction"], axis=1, inplace=True)
 
         # Parse predicted loser.
         teams = fm_df.Game.str.split(", ").tolist()
