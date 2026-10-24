@@ -22,6 +22,10 @@ UPSERT_SQL = text("""
         (:game_id, :game_date, :home_team, :away_team,
          :home_score, :away_score, :season, :status)
     ON CONFLICT (game_id) DO UPDATE SET
+        season = EXCLUDED.season,
+        game_date = EXCLUDED.game_date,
+        home_team = EXCLUDED.home_team,
+        away_team = EXCLUDED.away_team,
         home_score = EXCLUDED.home_score,
         away_score = EXCLUDED.away_score,
         status     = EXCLUDED.status,
@@ -54,7 +58,7 @@ def fetch_and_upsert_games(engine, client: Tank01Client, date_str: str) -> int:
         print(f"  ERROR upserting {date_str}: {e}")
         import traceback
         traceback.print_exc()
-        return 0
+        raise
 
 
 def detect_missing_dates(engine, start_date: datetime, end_date: datetime) -> list[str]:
@@ -104,7 +108,7 @@ def run_game_update(engine, backfill_days: int = 0):
     total = 0
 
     # Always fetch yesterday and today
-    for date_str in [yesterday, today]:
+    for date_str in [(now_pacific-timedelta(days=i)).strftime("%Y%m%d") for i in range(7, -1, -1)]:
         total += fetch_and_upsert_games(engine, client, date_str)
 
     # Optional backfill: check for missing dates
@@ -129,3 +133,4 @@ def run_game_update(engine, backfill_days: int = 0):
     print(f"\n  Neon total: {summary['total_games'].iloc[0]} games, "
           f"latest: {summary['latest'].iloc[0]}")
     print(f"  Done. {total} games updated.")
+

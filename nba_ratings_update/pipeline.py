@@ -3,14 +3,18 @@ Pipeline: Read game results from Neon, calculate AdjEM team ratings,
 and upsert into nba_team_ratings.
 """
 
+import os
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import text
 
 from .db import get_engine, query_df
-from .ratings import calculate_ratings
 
-SEASON = "2025-26"
+def current_season():
+    today = datetime.now(ZoneInfo("America/New_York"))
+    start = today.year if today.month >= 10 else today.year-1
+    return os.getenv("NBA_SEASON", f"{start}-{(start+1)%100:02d}")
 
 UPSERT_SQL = text("""
     INSERT INTO nba_team_ratings
@@ -28,55 +32,51 @@ UPSERT_SQL = text("""
 
 
 def run_ratings_update(engine):
-    print(f"[{datetime.now().isoformat()}] NBA Ratings Update starting...")
-
-    games_df = query_df("""
-        SELECT game_id, game_date, home_team, away_team,
-               home_score, away_score, margin, season, status
-        FROM nba_game_results
-        WHERE season = :season AND status = 'completed'
-        ORDER BY game_date
-    """, params={"season": SEASON})
-
-    if games_df.empty:
-        print("  No completed games found. Exiting.")
-        return
-
-    print(f"  Loaded {len(games_df)} completed games for {SEASON}")
-
-    # Use equal weights (no recency) so adj_d/adj_o always get updated regardless of date parsing
-    prediction_date = None
-    ratings = calculate_ratings(games_df, prediction_date=prediction_date)
-    print(f"  Calculated ratings for {len(ratings)} teams")
-
-    # Debug: show adj_off and adj_def for first few teams (should vary, not all 110)
-    for r in ratings[:5]:
-        print(f"  [sample] {r['team']}: adj_off={r['adj_o']:.2f} adj_def={r['adj_d']:.2f} adj_em={r['adj_em']:.2f}")
-    def_range = [r["adj_d"] for r in ratings]
-    print(f"  adj_def range: min={min(def_range):.2f} max={max(def_range):.2f} (should not both be 110)")
-
-    last_game = str(games_df["game_date"].max())
-
+    import json
+    from pathlib import Path
+    from .efficiency import load_efficiencies
+    season = current_season()
+    start = int(season[:4])
+    previous = f"{start-1}-{start%100:02d}"
+    cutoff = datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+    manifest = json.loads(Path(__file__).with_name('regular_season_manifest.json').read_text())
+    allowed = set(manifest['seasons'][previous]['game_ids'])
+    with engine.connect() as conn:
+        rows = [dict(r) for r in conn.execute(text("SELECT * FROM nba_game_results WHERE season IN (:season,:previous) AND status='completed' AND game_date < :cutoff"),
+            dict(season=season,previous=previous,cutoff=cutoff)).mappings()]
+    prior = [r for r in rows if r['season']==previous and r['game_id'] in allowed]
+    if {r['game_id'] for r in prior} != allowed:
+        raise RuntimeError('Prior regular-season results incomplete')
+    # The current-season game schedule excludes preseason from the rating input.
+    import requests
+    key = os.getenv('RAPIDAPI_KEY') or os.environ['TANK01_API_KEY']
+    response = requests.get('https://tank01-fantasy-stats.p.rapidapi.com/getNBATeams',
+        params={'schedules':'true'}, headers={'X-RapidAPI-Key':key,
+        'X-RapidAPI-Host':'tank01-fantasy-stats.p.rapidapi.com'},timeout=60)
+    response.raise_for_status()
+    teams = response.json().get('body')
+    if not isinstance(teams,list) or len(teams)!=30:
+        raise RuntimeError('Incomplete NBA schedule')
+    current_ids=set()
+    for team in teams:
+        schedule=team.get('teamSchedule')
+        if not isinstance(schedule,dict) or not schedule:
+            raise RuntimeError('Missing NBA team schedule')
+        current_ids.update(g['gameID'] for g in schedule.values() if g.get('seasonType')=='Regular Season')
+    current=[r for r in rows if r['season']==season and r['game_id'] in current_ids]
+    ratings=load_efficiencies(prior,current,cutoff,engine.raw_connection)
+    if len(ratings)!=30 or any(r.get('status')!='measured' for r in ratings.values()):
+        raise RuntimeError('Insufficient box-score coverage for team efficiencies')
     with engine.begin() as conn:
-        for r in ratings:
-            conn.execute(UPSERT_SQL, {
-                "team": r["team"],
-                "season": SEASON,
-                "adj_em": r["adj_em"],
-                "adj_off": r["adj_o"],
-                "adj_def": r["adj_d"],
-                "games": r["games"],
-                "last_game_date": last_game,
-            })
-
-    print(f"  Upserted {len(ratings)} ratings to nba_team_ratings")
-
-    # Verify what was written (including adj_def)
-    verify = query_df("""
-        SELECT team, adj_em, adj_off, adj_def, games FROM nba_team_ratings
-        WHERE season = :season ORDER BY adj_em DESC LIMIT 5
-    """, params={"season": SEASON})
-    print(f"  Top 5 in DB after write:")
-    for _, row in verify.iterrows():
-        print(f"    {row['team']}: adj_em={row['adj_em']:+.2f} adj_off={row['adj_off']:.2f} adj_def={row['adj_def']:.2f} ({row['games']}g)")
-    print("  Done.")
+        conn.execute(text("ALTER TABLE nba_team_ratings ADD COLUMN IF NOT EXISTS rating_method TEXT, ADD COLUMN IF NOT EXISTS prior_games INTEGER, ADD COLUMN IF NOT EXISTS current_weight DOUBLE PRECISION"))
+        for team,r in ratings.items():
+            games=[g for g in current if team in (g['home_team'],g['away_team'])]
+            if r['current_games'] != len(games):
+                raise RuntimeError(f'Incomplete current box scores for {team}')
+            conn.execute(UPSERT_SQL,dict(team=team,season=season,adj_em=r['adj_off']-r['adj_def'],
+                adj_off=r['adj_off'],adj_def=r['adj_def'],games=r['current_games'],
+                last_game_date=max((g['game_date'] for g in games),default=None)))
+            conn.execute(text("UPDATE nba_team_ratings SET rating_method=:method,prior_games=:prior,current_weight=:weight WHERE team=:team AND season=:season"),
+                dict(method=r['method'],prior=r['prior_games'],weight=r['current_weight'],team=team,season=season))
+    print(f"Stored {len(ratings)} measured season-blended efficiencies for {season}; defense range "
+          f"{min(r['adj_def'] for r in ratings.values()):.2f}–{max(r['adj_def'] for r in ratings.values()):.2f}")

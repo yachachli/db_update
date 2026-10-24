@@ -302,7 +302,7 @@ async def _update_player_info_and_season(pool: DBPool, client: httpx.AsyncClient
             """
             UPDATE nba_players
             SET player_pic = $1,
-                team_id = $2
+                team_id = COALESCE((SELECT id FROM nba_teams WHERE id = $2), team_id)
             WHERE player_id = $3
             """,
             p.get("nbaComHeadshot"),
@@ -638,5 +638,6 @@ async def run(pool: DBPool):
         await _update_team_defense_by_position(pool)
 
     logger.info("Async NBA update done")
+
 
 

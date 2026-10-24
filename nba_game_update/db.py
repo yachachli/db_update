@@ -31,6 +31,8 @@ def get_engine():
             )
         url = f"postgresql://{user}:{pw}@{host}/{name}?sslmode=require"
 
+    if url.startswith("postgresql://"):
+        url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
     _engine = create_engine(url, pool_pre_ping=True)
     return _engine
 
@@ -39,3 +41,4 @@ def query_df(sql, params=None):
     engine = get_engine()
     with engine.connect() as conn:
         return pd.read_sql(text(sql), conn, params=params)
+

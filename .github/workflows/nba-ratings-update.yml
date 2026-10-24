@@ -1,10 +1,7 @@
 name: NBA Team Ratings Update
 
 on:
-  schedule:
-    # Fifteen minutes after game results, in Pacific time year-round.
-    - cron: "52 0 * * *"
-      timezone: "America/Los_Angeles"
+  # Scheduled ratings now run after verified results and box scores.
   workflow_dispatch:
 
 jobs:
@@ -33,5 +30,7 @@ jobs:
           DB_USER: ${{ secrets.DB_USER }}
           DB_PASS: ${{ secrets.DB_PASSWORD }}
           DB_HOST: ${{ secrets.DB_HOST }}
+          RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
         run: |
           python -m nba_ratings_update
+

@@ -44,12 +44,12 @@ class Tank01Client:
                         continue
                     else:
                         print(f"  Tank01 error for {date}: 429 Too Many Requests (exhausted retries)")
-                        return []
+                        raise RuntimeError(f"Unable to fetch verified NBA scores for {date}")
                 
                 # Handle forbidden (might be API key issue or date not available)
                 if resp.status_code == 403:
                     print(f"  Tank01 error for {date}: 403 Forbidden (API key issue or date not available)")
-                    return []
+                    raise RuntimeError(f"Unable to fetch verified NBA scores for {date}")
                 
                 resp.raise_for_status()
                 data = resp.json()
@@ -63,7 +63,7 @@ class Tank01Client:
                     continue
                 else:
                     print(f"  Tank01 error for {date}: {exc} (exhausted retries)")
-                    return []
+                    raise RuntimeError(f"Unable to fetch verified NBA scores for {date}")
 
         body = data.get("body")
         if isinstance(body, list):
@@ -73,6 +73,8 @@ class Tank01Client:
             for gid, gdata in body.items():
                 if isinstance(gdata, dict):
                     gdata.setdefault("gameDate", date)
+                    gdata.setdefault("gameID", gid)
                     games.append(gdata)
             return games
-        return []
+        raise RuntimeError(f"Unable to fetch verified NBA scores for {date}")
+

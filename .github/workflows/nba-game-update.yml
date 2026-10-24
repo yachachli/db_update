@@ -6,12 +6,18 @@ on:
     # same Pacific wall-clock time across daylight-saving changes.
     - cron: "37 0 * * *"
       timezone: "America/Los_Angeles"
+    - cron: "7 6 * * *"
+      timezone: "America/Los_Angeles"
   workflow_dispatch:
+
+concurrency:
+  group: nba-complete-refresh
+  cancel-in-progress: false
 
 jobs:
   update-games:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - name: Check out repository code
         uses: actions/checkout@v7
@@ -24,7 +30,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-nba-crons.txt
+          pip install -r requirements-nba-crons.txt asyncpg httpx
           python -c "from sqlalchemy import create_engine; assert create_engine('postgresql://u:p@localhost/d').dialect.driver == 'psycopg2'"
 
       - name: Run game update pipeline
@@ -35,5 +41,12 @@ jobs:
           DB_PASS: ${{ secrets.DB_PASSWORD }}
           DB_HOST: ${{ secrets.DB_HOST }}
           RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          NBA_GAME_PREDICTOR_URL: https://us-central1-bestbet-d4d6b.cloudfunctions.net/nba_game_predictions
         run: |
           python -m nba_game_update
+          python -m nba_game_update.boxscores
+          python -m nba_ratings_update
+          python -m nba_odds_update
+          python scripts/sync_daily_nba_games.py
+
