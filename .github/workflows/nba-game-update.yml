@@ -33,6 +33,9 @@ jobs:
           pip install -r requirements-nba-crons.txt asyncpg httpx
           python -c "from sqlalchemy import create_engine; assert create_engine('postgresql://u:p@localhost/d').dialect.driver == 'psycopg2'"
 
+      - name: Test ingestion and publication guards
+        run: python -m unittest discover -s tests -p "test_*integrity.py" -q
+
       - name: Run game update pipeline
         env:
           DB_URL: ${{ secrets.DB_URL }}
