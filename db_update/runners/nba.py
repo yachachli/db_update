@@ -298,6 +298,14 @@ async def _update_player_info_and_season(pool: DBPool, client: httpx.AsyncClient
     now_year = str(datetime.now().year)
 
     async def upsert_info(conn: DBConnection, p: dict[str, Any]) -> None:
+        # Resolve provider ID changes using the unique exact name/team identity.
+        player_id = await conn.fetchval(
+            "SELECT player_id FROM nba_players WHERE player_id=$1 OR (LOWER(name)=LOWER($2) AND team_id=$3) ORDER BY (player_id=$1) DESC LIMIT 1",
+            int_safe(p.get("playerID")), p.get("longName") or "", int_safe(p.get("teamID")),
+        )
+        if player_id is None:
+            logger.warning("Skipping unrecognized player identity %s", p.get("playerID"))
+            return
         await conn.execute(
             """
             UPDATE nba_players
@@ -307,7 +315,7 @@ async def _update_player_info_and_season(pool: DBPool, client: httpx.AsyncClient
             """,
             p.get("nbaComHeadshot"),
             int_safe(p.get("teamID")),
-            int_safe(p.get("playerID")),
+            player_id,
         )
 
         # Upsert season stats
@@ -354,7 +362,7 @@ async def _update_player_info_and_season(pool: DBPool, client: httpx.AsyncClient
               free_throws_made_per_game = EXCLUDED.free_throws_made_per_game,
               free_throws_attempted_per_game = EXCLUDED.free_throws_attempted_per_game
             """,
-            int_safe(p.get("playerID")),
+            player_id,
             season_id,
             int_safe(s.get("gamesPlayed")),
             float_safe(s.get("pts")),
