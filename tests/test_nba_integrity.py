@@ -6,6 +6,12 @@ from nba_game_update.game_parser import parse_game
 from nba_ratings_update.pipeline import current_season
 
 class IngestionTests(unittest.TestCase):
+    def test_twenty_game_transition(self):
+        from nba_ratings_update.transition_policy import current_season_weight
+        self.assertEqual(current_season_weight(10), .5)
+        self.assertEqual(current_season_weight(20), 1)
+        self.assertEqual(current_season_weight(82), 1)
+
     def test_boxscore_includes_players_not_known_in_database(self):
         game=dict(game_id='g',home_team='NYK',away_team='BOS',home_score=120,away_score=100,game_date='2026-10-23')
         players={str(i):dict(mins='48',pts='24' if i<5 else '20',fga='20',fta='4',OffReb='2',TOV='2',teamID=1 if i<5 else 2,teamAbv='NY' if i<5 else 'BOS',longName=f'Player {i}') for i in range(10)}

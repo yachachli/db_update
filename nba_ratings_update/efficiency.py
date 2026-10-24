@@ -2,6 +2,7 @@
 from collections import defaultdict
 from datetime import date, timedelta
 import math
+from .transition_policy import current_season_weight, TRANSITION_POLICY
 
 
 def measured_efficiencies(games, rows, cutoff):
@@ -72,14 +73,21 @@ def load_efficiencies(prior_games, current_games, cutoff, connection_factory):
     output = {}
     for team in {g[s+'_team'] for g in prior_games for s in ('home','away')}:
         old, new = prior.get(team), current.get(team)
+        n = new['games'] if new else 0
+        w = current_season_weight(n)
+        if w == 1.0:
+            output[team] = {key: new[key] for key in ('adj_off', 'adj_def')}
+            output[team].update(status='measured', prior_games=0, current_games=n,
+                                current_weight=w, method='boxscore_possessions_recency_blend',
+                                transition_policy=TRANSITION_POLICY)
+            continue
         # Insufficient boxes must not become an invented league-average rating.
         if not old or old['games'] < 20:
             output[team] = {'adj_off': None, 'adj_def': None, 'status': 'insufficient_boxscores'}
             continue
-        n = new['games'] if new else 0
-        w = n/(n+20)
         output[team] = {key: (1-w)*old[key]+w*new[key] if new else old[key]
                         for key in ('adj_off','adj_def')}
         output[team].update(status='measured', prior_games=old['games'], current_games=n,
-                            current_weight=w, method='boxscore_possessions_recency_blend')
+                            current_weight=w, method='boxscore_possessions_recency_blend',
+                            transition_policy=TRANSITION_POLICY)
     return output
