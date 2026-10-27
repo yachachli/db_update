@@ -10,6 +10,7 @@ import time
 
 from db_update.db_pool import DBConnection, DBPool
 from db_update.logger import logger
+from db_update.runners.nba_rosters import sync_rosters
 from db_update.utils import batch, batch_db, decimal_safe, float_safe, int_safe
 
 
@@ -310,7 +311,9 @@ async def _update_player_info_and_season(pool: DBPool, client: httpx.AsyncClient
             """
             UPDATE nba_players
             SET player_pic = $1,
-                team_id = COALESCE((SELECT id FROM nba_teams WHERE id = $2), team_id)
+                team_id = COALESCE(
+                    (SELECT team_id FROM nba_current_rosters WHERE player_id = $3),
+                    (SELECT id FROM nba_teams WHERE id = $2), team_id)
             WHERE player_id = $3
             """,
             p.get("nbaComHeadshot"),
@@ -582,6 +585,10 @@ async def run(pool: DBPool):
         # Inject key from env read by httpx at request time; leave header holder
         import os
         client.headers["x-rapidapi-key"] = os.environ.get("RAPIDAPI_KEY", "")
+
+        # Validate current membership before collecting historical stats.
+        roster_payload = await _fetch_json(client, f"https://{RAPIDAPI_HOST}/getNBATeams", {"rosters": "true"})
+        await sync_rosters(pool, roster_payload)
 
         # Block 1: Player game stats
         logger.info("[1] fetching player ids")
