@@ -7,8 +7,10 @@ import unicodedata
 
 from cfb.data import Client, connect
 
+from cfb.counts import COUNT_MARKETS
+
 MARKETS = {'player_pass_yds': 'pass yards', 'player_rush_yds': 'rush yards',
-           'player_reception_yds': 'rec yards'}
+           'player_reception_yds': 'rec yards', **COUNT_MARKETS}
 
 
 def timestamp(value):

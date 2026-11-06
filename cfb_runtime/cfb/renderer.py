@@ -32,12 +32,12 @@ def render_analysis(result):
                             f"{history.get('under_hits', 0)} under, {history.get('pushes', 0)} pushes at this line.")
         volume = result.get('projected_volume')
         if isinstance(volume, (int, float)) and math.isfinite(volume):
-            unit = {'pass yards': 'pass attempts', 'rush yards': 'carries', 'rec yards': 'receptions'}[stat]
+            unit = {'pass yards': 'pass attempts', 'rush yards': 'carries', 'rec yards': 'receptions'}.get(stat, stat)
             insights.append(f"Estimated volume: {volume:.1f} {unit}; includes opponent-adjusted game context.")
         play = result.get('participation_probability')
         if isinstance(play, (int, float)) and not isinstance(play, bool) and math.isfinite(play):
             insights.append(f"Projection assumes {name} records a {stat} stat; estimated "
-                            f"{play:.0%} chance of that, for {play * point:.1f} yards unconditionally.")
+                            f"{play:.0%} chance of that, for {play * point:.1f} {'yards' if 'yards' in stat else stat} unconditionally.")
             if play < 0.5:
                 # A sub-coin-flip chance of recording the stat is the headline,
                 # not a footnote under a confident-looking yardage number.

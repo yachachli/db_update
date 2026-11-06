@@ -27,6 +27,9 @@ def main():
     props.add_argument('--new-only',action='store_true',help='Skip previously analyzed game/player/market/line combinations')
     props.add_argument('--per-game-limit',type=int,default=10)
     sub.add_parser('train-release')
+    counts=sub.add_parser('train-counts')
+    counts.add_argument('--features',required=True)
+    counts.add_argument('--output',required=True)
     sub.add_parser('track-results')
     pipeline=sub.add_parser('pipeline')
     pipeline.add_argument('--mode',choices=['weekly','markets'],default='weekly')
@@ -63,6 +66,9 @@ def main():
     elif args.command=='train-release':
         from cfb.release import train
         train()
+    elif args.command=='train-counts':
+        from cfb.counts import train
+        train(args.features,args.output)
     elif args.command=='track-results':
         from cfb.tracking import run
         run()

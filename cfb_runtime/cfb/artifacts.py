@@ -22,6 +22,10 @@ def write_model_bundle(source, archive):
         for field, checksum in (('artifact', 'sha256'), ('participation_artifact', 'participation_sha256')):
             if hashlib.sha256((source / entry[field]).read_bytes()).hexdigest() != entry[checksum]:
                 raise ValueError('Model artifact integrity check failed')
+    for entry in manifest['categories'].values():
+        if 'calibration_sha256' in entry:
+            if hashlib.sha256((source / entry['calibration']).read_bytes()).hexdigest() != entry['calibration_sha256']:
+                raise ValueError('Calibration integrity check failed')
     archive.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as zipped:
         for name in sorted(set(names)):
