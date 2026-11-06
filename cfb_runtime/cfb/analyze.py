@@ -11,13 +11,14 @@ from cfb.pou import candidates,COLS
 from cfb.backtest import LOOKBACK_SEASONS, rating_features
 from cfb.efficiency import efficiency_features
 from cfb.release import predict,probability
+from cfb.counts import COUNT_STATS, predict as count_predict, probability as count_probability
 
-STAT={'pass yards':'passing','rush yards':'rushing','rec yards':'receiving'}
+STAT={'pass yards':'passing','rush yards':'rushing','rec yards':'receiving', **COUNT_STATS}
 
 
 def validate_request(request):
     if not isinstance(request,dict): raise ValueError('JSON object required')
-    if request.get('stat') not in STAT: raise ValueError('Supported stats: pass yards, rush yards, rec yards')
+    if request.get('stat') not in STAT: raise ValueError('Supported stats: ' + ', '.join(STAT))
     try:
         if any(isinstance(request[k],bool) or not str(request[k]).isdigit() for k in ('game_id','player_id')):
             raise ValueError('IDs must be positive integer identifiers')
@@ -33,19 +34,28 @@ def validate_request(request):
 def load_artifacts(category):
     root=ROOT/'models/saved/pou_v1'
     manifest=json.loads((root/'manifest.json').read_text())
+    if category not in manifest['categories']:
+        raise ValueError('Missing calibrated artifact for ' + category)
     entry=manifest['categories'][category]
     names=[entry['artifact'],entry['calibration'],entry['participation_artifact']]
     paths=[root/n for n in names]
     if any(p.resolve().parent!=root.resolve() for p in paths): raise ValueError('Artifact path outside model directory')
     for path,key in ((paths[0],'sha256'),(paths[2],'participation_sha256')):
         if hashlib.sha256(path.read_bytes()).hexdigest()!=entry[key]: raise ValueError('Model artifact integrity mismatch')
+    if entry.get('target') == 'volume':
+        if hashlib.sha256(paths[1].read_bytes()).hexdigest() != entry.get('calibration_sha256'):
+            raise ValueError('Count calibration integrity mismatch')
     # Only load our own locally trained, integrity-checked artifacts.
     return manifest,entry,joblib.load(paths[0]),json.loads(paths[1].read_text()),joblib.load(paths[2])
 
 
 def analyze_internal(request):
     gid,pid,line,as_of,category=validate_request(request)
-    manifest,entry,model,cal,participation=load_artifacts(category)
+    is_count = request['stat'] in COUNT_STATS
+    unit = request['stat'] if is_count else 'yards'
+    manifest,entry,model,cal,participation=load_artifacts(category + '_volume' if is_count else category)
+    if is_count and (cal.get('target') != 'volume' or cal.get('category') != category):
+        raise ValueError('Wrong count calibration target')
     cutoff=as_of.normalize()
     if pd.Timestamp(cal['last_calibration_kickoff'])>=cutoff: raise ValueError('Model calibration is later than requested cutoff')
     with connect() as conn:
@@ -77,7 +87,7 @@ def analyze_internal(request):
     canonical_input={**request,'player_id':int(pid),'line':line,
                      'team_code':request.get('team_code','Unknown'),'opponent_abv':request.get('opponent_abv','Unknown')}
     base={'league':'CFB','input':canonical_input,'injury':None,'availability_status':'unknown','grade':0,'over_under':None,
-          'recommendation_status':'abstain','market_ready':False,'model_version':manifest['version'],
+          'recommendation_status':'abstain','market_ready':False,'model_version':entry.get('model_version',manifest['version']),
           'data_cutoff':str(cutoff),'player_position':'Unknown','projected_stat':request['stat'],
           'scope':'Conditional research analysis, not a sportsbook recommendation'}
     if len(selected)!=1:
@@ -93,35 +103,41 @@ def analyze_internal(request):
             raise ValueError(f'{key} does not match the game/player history')
     for key,expected in [('team_code',team_name),('opponent_abv',opponent)]:
         if key in request and str(request[key])!=expected: raise ValueError(f'{key} requires the exact CFBD school name in this prototype')
-    volume,point=predict(model,selected)
-    point=float(point[0]); volume=float(volume[0]); radius=cal['q90']*np.sqrt(max(volume,1))
+    if is_count:
+        point = volume = float(count_predict(model, selected)[0])
+    else:
+        volume,point=predict(model,selected)
+        point=float(point[0]); volume=float(volume[0])
+    radius=cal['q90']*np.sqrt(max(volume,1))
     # P(a box score records this category). Not availability and not an injury model.
     play=float(participation.predict_proba(selected[COLS])[0,1])
-    probs=probability(point,volume,line,cal['residuals'])
+    probs=(count_probability(point,line,cal['residuals']) if is_count
+           else probability(point,volume,line,cal['residuals']))
     lean='over' if probs['over']>probs['under'] else 'under' if probs['under']>probs['over'] else None
     recent=players[(players.player_id==pid)&(players.team_id==team)&(players.category==category)].merge(
         games[['game_id','season','kickoff']],on='game_id',validate='many_to_one')
     recent=recent[recent.season==target[1]].sort_values('kickoff').tail(5)
-    values=recent.yards.to_numpy()
+    value_column = 'volume' if is_count else 'yards'
+    values=recent[value_column].to_numpy()
     reasons=['availability_unconfirmed','sportsbook_identity_unverified','grading_rules_unverified','conditional_distribution_not_market_validated']
     if play<.5: reasons.append('low_projected_participation')
     if category=='receiving': reasons.append('receiving_zero_label_sensitivity')
     if not cal['volume_low']<=volume<=cal['volume_high']: reasons.append('outside_calibration_workload')
     if 2*radius>cal['width90_limit']: reasons.append('wide_interval')
-    insights=[f"Projects {point:.1f} yards versus a {line:g} line, conditional on a recorded {category} outcome.",
+    insights=[f"Projects {point:.1f} {unit} versus a {line:g} line, conditional on a recorded {category} outcome.",
               f"Estimated {play:.0%} chance of recording a {category} stat at all; "
-              f"unconditional projection {play*point:.1f} yards.",
+              f"unconditional projection {play*point:.1f} {unit}.",
               f"Uses {int(row.prior_games)} prior eligible appearances and opponent-adjusted game context; model: {entry['kind']}.",
               'No bet recommendation: availability, zero-stat coverage, and market grading remain unverified.']
     return {**base,'player_name':row.player_name,'team':team_name,'opponent':opponent,'projected_value':point,
             'projected_volume':volume,'model_lean':lean,'conditional_probabilities':probs,
             'participation_probability':play,'unconditional_projected_value':play*point,
             'participation_label':'Probability a box score records this category; not confirmed availability',
-            'point_target':'conditional median' if entry['kind']=='boosted_median' else 'volume times efficiency',
-            'volume_source':'trailing-five mean' if entry['kind']!='volume_efficiency' else 'volume regression',
-            'interval90':{'lower':float(point-radius),'upper':float(point+radius),'nominal_level':.9},
+            'point_target':'conditional count' if is_count else 'conditional median' if entry['kind']=='boosted_median' else 'volume times efficiency',
+            'volume_source':entry['kind'] if is_count else 'trailing-five mean' if entry['kind']!='volume_efficiency' else 'volume regression',
+            'interval90':{'lower':float(max(0,point-radius) if is_count else point-radius),'upper':float(point+radius),'nominal_level':.9},
             'history':{'games':len(values),'over_hits':int((values>line).sum()),'under_hits':int((values<line).sum()),'pushes':int((values==line).sum())},
-            'graphs':[{'version':1,'title':request['stat'],'threshold':line,'data':[{'value':int(r.yards),'label':str(r.game_id),'date':str(r.kickoff)} for r in recent.itertuples()]}],
+            'graphs':[{'version':1,'title':request['stat'],'threshold':line,'data':[{'value':int(getattr(r,value_column)),'label':str(r.game_id),'date':str(r.kickoff)} for r in recent.itertuples()]}],
             'insights':insights,'short_answer':f'Research-only {lean or "neutral"} lean; no recommended bet.',
             'long_answer':' '.join(insights),'abstention_reasons':reasons,
             'validation_run_id':entry['validation_run_id']}

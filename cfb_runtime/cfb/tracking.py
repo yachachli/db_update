@@ -6,11 +6,13 @@ import math
 
 from cfb.data import connect
 from cfb.markets import timestamp
+from cfb.counts import COUNT_STATS, COUNT_MARKETS
 
 CATEGORIES = {'player_pass_yds': 'passing', 'player_rush_yds': 'rushing',
-              'player_reception_yds': 'receiving'}
+              'player_reception_yds': 'receiving',
+              **{market: COUNT_STATS[stat] for market, stat in COUNT_MARKETS.items()}}
 STATS = {'player_pass_yds': 'pass yards', 'player_rush_yds': 'rush yards',
-         'player_reception_yds': 'rec yards'}
+         'player_reception_yds': 'rec yards', **COUNT_MARKETS}
 
 
 def finite(value):
@@ -46,14 +48,19 @@ def evaluate(row):
     if row['actual_team_id'] is not None and row['actual_team_id'] != row['team_id']:
         result['status'] = 'outcome_team_mismatch'
         return result
-    if row['actual_yards'] is None:
+    is_count = row['market'] in COUNT_MARKETS
+    actual = row.get('actual_volume') if is_count else row['actual_yards']
+    if actual is None:
         result['status'] = 'missing_box_score_outcome'
         return result
-    actual = row['actual_yards']
-    if not finite(actual):
+    if not finite(actual) or (is_count and (actual < 0 or actual != int(actual))):
         result['status'] = 'invalid_box_score_outcome'
         return result
-    result['actual_yards'] = actual
+    if is_count:
+        result['actual_volume'] = actual
+    else:
+        result['actual_yards'] = actual
+    result['actual_value'] = actual
     result['observed_side'] = 'over' if actual > row['line'] else 'under' if actual < row['line'] else 'push'
     point = analysis.get('projected_value')
     if not finite(point):
@@ -91,14 +98,16 @@ def run():
         cur = conn.execute('''SELECT f.id AS research_id,f.created_at,f.request,f.analysis,
             c.captured_at,c.kickoff AS provider_kickoff,c.game_id,c.match_status AS game_match_status,
             q.player_id,q.team_id,q.market,q.line,q.match_status AS player_match_status,
-            g.kickoff,g.completed,p.team_id AS actual_team_id,p.yards AS actual_yards
+            g.kickoff,g.completed,p.team_id AS actual_team_id,p.yards AS actual_yards,p.volume AS actual_volume
             FROM cfb_model_v1.forward_research f
             JOIN cfb_model_v1.prop_quotes q ON q.id=f.quote_id
             JOIN cfb_model_v1.prop_captures c ON c.id=q.capture_id
             JOIN cfb_model_v1.games g ON g.game_id=c.game_id
             LEFT JOIN cfb_model_v1.player_offense p ON p.game_id=c.game_id AND p.player_id=q.player_id
               AND p.category=CASE q.market WHEN 'player_pass_yds' THEN 'passing'
-                 WHEN 'player_rush_yds' THEN 'rushing' WHEN 'player_reception_yds' THEN 'receiving' END
+                 WHEN 'player_rush_yds' THEN 'rushing' WHEN 'player_reception_yds' THEN 'receiving'
+                 WHEN 'player_pass_attempts' THEN 'passing' WHEN 'player_rush_attempts' THEN 'rushing'
+                 WHEN 'player_receptions' THEN 'receiving' END
             ORDER BY f.id''')
         rows = [dict(zip([d.name for d in cur.description], row)) for row in cur.fetchall()]
         records = []
@@ -106,7 +115,7 @@ def run():
             result = evaluate(row)
             # Include source evidence, so later stat/schedule corrections append a new observation.
             evidence = dict(result=result, kickoff=row['kickoff'].isoformat(), completed=row['completed'],
-                            actual_team_id=row['actual_team_id'], actual_yards=row['actual_yards'])
+                            actual_team_id=row['actual_team_id'], actual_yards=row['actual_yards'], actual_volume=row.get('actual_volume'))
             digest = hashlib.sha256(json.dumps(evidence, sort_keys=True, allow_nan=False).encode()).hexdigest()
             latest = conn.execute('''SELECT evidence_sha256 FROM cfb_model_v1.forward_outcomes
                 WHERE research_id=%s ORDER BY id DESC LIMIT 1''', (row['research_id'],)).fetchone()
