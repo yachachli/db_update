@@ -1,0 +1,89 @@
+name: NFL PropGPT season ops
+
+# Checks out zernerdoescode/nfl-propgpt-model and runs the weekly DAG
+# against Neon schema nfl_model_v2. Does not replace nfl-update.yml (v3_nfl_*).
+
+on:
+  schedule:
+    - cron: "0 15 * * 2"
+    - cron: "0 15 * * 4"
+    - cron: "0 15 * * 6"
+    - cron: "0 14 * * 0"
+  workflow_dispatch:
+    inputs:
+      day:
+        description: DAG to run
+        type: choice
+        options: [auto, tuesday, thursday, saturday, sunday, all]
+        default: auto
+
+jobs:
+  weekly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      TANK01_API_KEY: ${{ secrets.TANK01_API_KEY }}
+      RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
+      DB_URL: ${{ secrets.DB_URL }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DB_NAME: ${{ secrets.DB_NAME }}
+      DB_USER: ${{ secrets.DB_USER }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      DB_HOST: ${{ secrets.DB_HOST }}
+      DB_SCHEMA: ${{ secrets.DB_SCHEMA }}
+      LOG_LEVEL: INFO
+    steps:
+      - name: Checkout db_update
+        uses: actions/checkout@v4
+
+      - name: Checkout nfl-propgpt-model
+        uses: actions/checkout@v4
+        with:
+          repository: zernerdoescode/nfl-propgpt-model
+          token: ${{ secrets.NFL_MODEL_TOKEN }}
+          path: nfl-propgpt-model
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Resolve Neon + Tank01 env
+        run: |
+          set -euo pipefail
+          if [ -z "${TANK01_API_KEY:-}" ] && [ -n "${RAPIDAPI_KEY:-}" ]; then
+            echo "TANK01_API_KEY=${RAPIDAPI_KEY}" >> "$GITHUB_ENV"
+          fi
+          if [ -z "${DB_URL:-}" ] && [ -n "${DATABASE_URL:-}" ]; then
+            echo "DB_URL=${DATABASE_URL}" >> "$GITHUB_ENV"
+          fi
+          echo "DB_SCHEMA=${DB_SCHEMA:-nfl_model_v2}" >> "$GITHUB_ENV"
+
+      - name: Restore Tank01 / run-state cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            nfl-propgpt-model/data/raw_cache
+            nfl-propgpt-model/data/run_state
+          key: nfl-propgpt-${{ github.run_id }}
+          restore-keys: |
+            nfl-propgpt-
+
+      - name: Install model
+        working-directory: nfl-propgpt-model
+        run: pip install -e .
+
+      - name: Migrate nfl_model_v2
+        working-directory: nfl-propgpt-model
+        run: python -m alembic upgrade head
+
+      - name: weekly_run
+        env:
+          NFL_MODEL_ROOT: ${{ github.workspace }}/nfl-propgpt-model
+        run: |
+          set -euo pipefail
+          DAY="${{ github.event.inputs.day || 'auto' }}"
+          EXTRA=(--skip-retrain)
+          if [ "$DAY" != "auto" ]; then
+            EXTRA+=(--day "$DAY")
+          fi
+          python -m nfl_propgpt_update "${EXTRA[@]}"
