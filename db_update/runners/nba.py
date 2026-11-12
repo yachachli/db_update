@@ -31,15 +31,22 @@ async def _fetch_json(client: httpx.AsyncClient, url: str, params: dict[str, Any
         last_exc: Exception | None = None
         while attempts < 6:
             attempts += 1
-            r = await client.get(
-                url,
-                params=params,
-                headers={
-                    "x-rapidapi-host": RAPIDAPI_HOST,
-                    "x-rapidapi-key": client.headers.get("x-rapidapi-key", ""),
-                },
-                timeout=60,
-            )
+            try:
+                r = await client.get(
+                    url,
+                    params=params,
+                    headers={
+                        "x-rapidapi-host": RAPIDAPI_HOST,
+                        "x-rapidapi-key": client.headers.get("x-rapidapi-key", ""),
+                    },
+                    timeout=60,
+                )
+            except httpx.TransportError as exc:
+                if attempts >= 6:
+                    raise
+                logger.warning("NBA provider transport failure (%s); retry %s/6", type(exc).__name__, attempts)
+                await asyncio.sleep(min(2 ** attempts, 30))
+                continue
             if r.status_code == 429:
                 retry_after = r.headers.get("Retry-After")
                 try:
@@ -590,6 +597,11 @@ async def run(pool: DBPool):
         roster_payload = await _fetch_json(client, f"https://{RAPIDAPI_HOST}/getNBATeams", {"rosters": "true"})
         await sync_rosters(pool, roster_payload)
 
+        # Update app standings before the lengthy per-player history scan.
+        # A player endpoint failure must not prevent team summaries refreshing.
+        logger.info("[teams] updating team stats")
+        await _update_teams(pool, client)
+
         # Block 1: Player game stats
         logger.info("[1] fetching player ids")
         async with pool.acquire() as conn:
@@ -609,11 +621,11 @@ async def run(pool: DBPool):
         # Process batches manually with delays to further reduce rate limit issues
         import itertools
         games_results: list[tuple[int, dict[str, dict[str, Any]]]] = []
-        tasks = [fetch_player_games(pid) for pid in player_ids]
+        tasks = player_ids
         batch_size = 3  # Further reduced batch size
         total = 0
         for batch_tasks in itertools.batched(tasks, batch_size):
-            batch_results = await asyncio.gather(*batch_tasks)
+            batch_results = await asyncio.gather(*(fetch_player_games(pid) for pid in batch_tasks))
             games_results.extend(batch_results)
             total += len(batch_tasks)
             logger.info(f"  {total} of {len(tasks)}")
@@ -643,10 +655,6 @@ async def run(pool: DBPool):
         # Block 3: Player info and season stats
         logger.info("[3] updating player info and season stats")
         await _update_player_info_and_season(pool, client)
-
-        # Block 4: Team stats
-        logger.info("[4] updating team stats")
-        await _update_teams(pool, client)
 
         # Block 5: Team defense by position
         logger.info("[5] updating team defense by position")

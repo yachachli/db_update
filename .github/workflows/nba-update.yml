@@ -1,14 +1,20 @@
 name: Daily NBA DB Update
 
 on:
-  # Temporarily disable scheduled runs; trigger manually when needed.
   schedule:
-    - cron: "0 7 * * *" # Runs daily at 11:00 PM PST (07:00 UTC). Update for DST if needed.
+    # Run after late games; the box-score workflow also catches delayed results.
+    - cron: "17 1 * * *"
+      timezone: "America/Los_Angeles"
   workflow_dispatch:
+
+concurrency:
+  group: nba-player-team-summary-refresh
+  cancel-in-progress: false
 
 jobs:
   run-daily-task:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
 
     steps:
       - name: Check out repository code
@@ -32,4 +38,5 @@ jobs:
           DB_HOST: ${{ secrets.DB_HOST }}
           RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
         run: |
+          python -m unittest discover -s tests -p "test_nba_transport.py" -q
           python -m db_update nba
